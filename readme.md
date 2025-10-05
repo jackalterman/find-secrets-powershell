@@ -2,7 +2,7 @@
 
 A comprehensive, enterprise-grade PowerShell tool for detecting secrets, credentials, API keys, and other sensitive information in your codebase and git history.
 
-## 🚀 Features
+## Features
 
 ### Core Capabilities
 - **50+ Pre-defined Secret Patterns** - Detects AWS keys, GitHub tokens, API keys, private keys, database credentials, and more
@@ -22,13 +22,15 @@ A comprehensive, enterprise-grade PowerShell tool for detecting secrets, credent
 - File size limits to prevent memory issues
 - Extensive file type support (60+ extensions)
 
-## 📋 Requirements
+## Requirements
 
 - Windows PowerShell 5.1 or PowerShell 7+
-- Windows Operating System
+- Windows Operating System (for local use)
 - Git (optional, only required for `-ScanGitHistory` feature)
 
-## 📥 Installation
+**Note:** For CI/CD usage, PowerShell availability depends on the platform - see [CI/CD Integration](#cicd-integration) section below.
+
+## Installation
 
 No installation required! Just download the script and run it with PowerShell.
 
@@ -38,10 +40,10 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/jackalterman/find-secr
 
 # Or clone the repository
 git clone https://github.com/jackalterman/find-secrets-powershell.git
-cd secret-scanner
+cd find-secrets-powershell
 ```
 
-## 🎯 Quick Start
+## Quick Start
 
 ```powershell
 # Basic scan of current directory
@@ -63,7 +65,7 @@ cd secret-scanner
 .\find_secrets.ps1 -Directory . -Interactive
 ```
 
-## 📖 Usage
+## Usage
 
 ### Basic Syntax
 
@@ -101,7 +103,7 @@ cd secret-scanner
 
 **Files:** `*.min.js`, `*.min.css`, `*.map`, `*.dll`, `*.exe`, `*.zip`, `*.tar`, `*.gz`, `*.jpg`, `*.png`, `*.gif`, `*.pdf`, `*.woff*`, `*.ttf`, `*.eot`, `.env`
 
-## 🔍 Detected Secret Types
+## Detected Secret Types
 
 ### Cloud Providers
 - **AWS Access Keys** - AKIA*, ASIA*, ABIA*, ACCA* patterns
@@ -162,7 +164,7 @@ cd secret-scanner
 - **Generic Passwords** - password=* assignments
 - **Generic Secrets** - secret/token/credential assignments
 
-## 📚 Examples
+## Examples
 
 ### Example 1: Basic Project Scan
 ```powershell
@@ -222,7 +224,7 @@ Scans for High and Critical findings, then enters interactive mode to review and
 ```
 Excludes test directories and files, with a higher entropy threshold.
 
-## 📝 Whitelist Format
+## Whitelist Format
 
 The whitelist file supports two formats:
 
@@ -247,7 +249,7 @@ src/utils/constants.ts:DEMO_API_KEY
 - Patterns are case-sensitive
 - Use wildcards in file paths: `*/test/*:test_key`
 
-## 📊 Output Formats
+## Output Formats
 
 ### Text (Default)
 Human-readable console output with colored severity indicators and detailed information.
@@ -314,7 +316,7 @@ Static Analysis Results Interchange Format - compatible with GitHub Code Scannin
 }
 ```
 
-## 🚦 Exit Codes
+## Exit Codes
 
 | Code | Meaning |
 |------|---------|
@@ -323,7 +325,7 @@ Static Analysis Results Interchange Format - compatible with GitHub Code Scannin
 | `2` | Critical findings detected (only with `-FailOnCritical` flag) |
 | `3` | Fatal error during execution |
 
-## ⚡ Performance Considerations
+## Performance Considerations
 
 ### PowerShell 7+ (Recommended)
 - **Parallel Processing:** Uses `-ThrottleLimit` parameter (default: 10 threads)
@@ -338,7 +340,7 @@ Static Analysis Results Interchange Format - compatible with GitHub Code Scannin
 - **Best for:** Smaller projects or environments without PS7+
 
 ### Git History Scanning
-⚠️ **WARNING:** Can be very slow on large repositories
+**WARNING:** Can be very slow on large repositories
 - Scans **every commit** in repository history
 - Time scales with: number of commits × size of changes
 - Typical performance: 10-100 commits/second
@@ -356,9 +358,27 @@ Static Analysis Results Interchange Format - compatible with GitHub Code Scannin
 pwsh -File find_secrets.ps1 -Directory . -ThrottleLimit 20
 ```
 
-## 🔗 CI/CD Integration
+## CI/CD Integration
+
+### PowerShell Availability by Platform
+
+| Platform | PowerShell Available? | Installation Required? | Notes |
+|----------|----------------------|------------------------|-------|
+| **GitHub Actions** (windows-latest) | Yes | No | PowerShell 5.1 and PowerShell 7 pre-installed |
+| **GitHub Actions** (ubuntu-latest) | Yes | No | PowerShell 7+ pre-installed |
+| **GitHub Actions** (macos-latest) | Yes | No | PowerShell 7+ pre-installed |
+| **Azure DevOps** (Windows) | Yes | No | PowerShell 5.1 and 7 available |
+| **Azure DevOps** (Linux) | Maybe | Yes | May need to install PowerShell 7 |
+| **Jenkins** (Windows) | Yes | No | Usually pre-installed |
+| **Jenkins** (Linux) | No | Yes | Requires PowerShell 7 installation |
+| **GitLab CI** (Windows) | Yes | No | Available on Windows runners |
+| **GitLab CI** (Linux) | No | Yes | Need PowerShell container or installation |
+| **CircleCI** (Windows) | Yes | No | Available on Windows executors |
+| **CircleCI** (Linux) | No | Yes | Requires installation |
 
 ### GitHub Actions
+
+**Windows runners** - No installation needed:
 ```yaml
 name: Secret Scan
 
@@ -366,11 +386,11 @@ on: [push, pull_request]
 
 jobs:
   scan:
-    runs-on: windows-latest
+    runs-on: windows-latest  # PowerShell pre-installed
     steps:
       - uses: actions/checkout@v3
         with:
-          fetch-depth: 0  # Full history for git scanning
+          fetch-depth: 0
       
       - name: Run Secret Scanner
         run: |
@@ -387,14 +407,30 @@ jobs:
           sarif_file: secret-scan.sarif
 ```
 
+**Linux/macOS runners** - PowerShell 7 pre-installed:
+```yaml
+jobs:
+  scan:
+    runs-on: ubuntu-latest  # or macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Run Secret Scanner
+        run: |
+          pwsh -File find_secrets.ps1 -Directory . -OutputFormat sarif
+        shell: pwsh
+```
+
 ### Azure DevOps
+
+**Windows agents** - No installation needed:
 ```yaml
 trigger:
   - main
   - develop
 
 pool:
-  vmImage: 'windows-latest'
+  vmImage: 'windows-latest'  # PowerShell available
 
 steps:
   - checkout: self
@@ -419,7 +455,38 @@ steps:
       ArtifactName: 'SecurityScanReport'
 ```
 
+**Linux agents** - Install PowerShell first:
+```yaml
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+  - checkout: self
+  
+  - task: PowerShell@2
+    displayName: 'Install PowerShell'
+    inputs:
+      targetType: 'inline'
+      script: |
+        # Install PowerShell on Linux
+        sudo apt-get update
+        sudo apt-get install -y wget apt-transport-https software-properties-common
+        wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
+        sudo dpkg -i packages-microsoft-prod.deb
+        sudo apt-get update
+        sudo apt-get install -y powershell
+  
+  - task: PowerShell@2
+    displayName: 'Run Secret Scanner'
+    inputs:
+      filePath: 'find_secrets.ps1'
+      arguments: '-Directory . -OutputFormat sarif'
+      pwsh: true
+```
+
 ### Jenkins
+
+**Windows agents** - No installation needed:
 ```groovy
 pipeline {
     agent { label 'windows' }
@@ -459,11 +526,40 @@ pipeline {
 }
 ```
 
+**Linux agents** - Install PowerShell:
+```groovy
+pipeline {
+    agent { label 'linux' }
+    
+    stages {
+        stage('Install PowerShell') {
+            steps {
+                sh '''
+                    # Install PowerShell on Linux (Ubuntu/Debian)
+                    wget -q https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb
+                    sudo dpkg -i packages-microsoft-prod.deb
+                    sudo apt-get update
+                    sudo apt-get install -y powershell
+                '''
+            }
+        }
+        
+        stage('Secret Scan') {
+            steps {
+                sh 'pwsh -File find_secrets.ps1 -Directory . -OutputFormat json'
+            }
+        }
+    }
+}
+```
+
 ### GitLab CI
+
+**Using PowerShell container** (Recommended for Linux):
 ```yaml
 secret_scan:
   stage: security
-  image: mcr.microsoft.com/powershell:latest
+  image: mcr.microsoft.com/powershell:latest  # Official PowerShell container
   script:
     - pwsh -File find_secrets.ps1 -Directory . -OutputFormat json -FailOnCritical
   artifacts:
@@ -477,7 +573,84 @@ secret_scan:
     - main
 ```
 
-## ✅ Best Practices
+**Windows runner** - No installation needed:
+```yaml
+secret_scan:
+  stage: security
+  tags:
+    - windows  # Windows runner required
+  script:
+    - pwsh -File find_secrets.ps1 -Directory . -OutputFormat sarif
+  artifacts:
+    paths:
+      - secret-scan.*
+```
+
+### CircleCI
+
+**Windows executor**:
+```yaml
+version: 2.1
+
+jobs:
+  secret-scan:
+    executor: 
+      name: win/default  # Windows executor
+    steps:
+      - checkout
+      - run:
+          name: Run Secret Scanner
+          command: |
+            pwsh -File find_secrets.ps1 -Directory . -OutputFormat json
+      - store_artifacts:
+          path: secret-scan.json
+
+workflows:
+  scan:
+    jobs:
+      - secret-scan
+```
+
+**Linux executor** - Using PowerShell container:
+```yaml
+version: 2.1
+
+jobs:
+  secret-scan:
+    docker:
+      - image: mcr.microsoft.com/powershell:latest
+    steps:
+      - checkout
+      - run:
+          name: Run Secret Scanner
+          command: pwsh -File find_secrets.ps1 -Directory . -OutputFormat json
+      - store_artifacts:
+          path: secret-scan.json
+```
+
+### Docker Container Approach (Universal)
+
+For any CI/CD platform that supports Docker:
+
+```dockerfile
+# Dockerfile
+FROM mcr.microsoft.com/powershell:latest
+
+WORKDIR /scan
+
+COPY find_secrets.ps1 .
+
+ENTRYPOINT ["pwsh", "-File", "find_secrets.ps1"]
+CMD ["-Directory", "/scan/code", "-OutputFormat", "json"]
+```
+
+Then use in any CI/CD:
+```yaml
+# Example for any platform
+docker run -v $(pwd):/scan/code your-org/secret-scanner:latest
+```
+
+## Best Practices
 
 ### 1. Pre-Commit Hooks
 Prevent secrets from being committed in the first place:
@@ -487,7 +660,7 @@ Prevent secrets from being committed in the first place:
 #!/usr/bin/env pwsh
 .\find_secrets.ps1 -Directory . -MinSeverity High -QuietMode
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ Commit rejected: Secrets detected!" -ForegroundColor Red
+    Write-Host "Commit rejected: Secrets detected!" -ForegroundColor Red
     exit 1
 }
 ```
@@ -526,22 +699,22 @@ When secrets are detected:
 
 ### 6. Use Proper Secrets Management
 ```powershell
-# ❌ Bad - Hardcoded secret
+# Bad - Hardcoded secret
 $apiKey = "sk_live_abc123xyz789"
 
-# ✅ Good - Environment variable
+# Good - Environment variable
 $apiKey = $env:STRIPE_API_KEY
 
-# ✅ Better - Azure Key Vault
+# Better - Azure Key Vault
 $apiKey = Get-AzKeyVaultSecret -VaultName "MyVault" -Name "StripeApiKey"
 ```
 
 ### 7. Never Use `-ShowSecretValues` in Production
 ```powershell
-# ❌ Dangerous - exposes secrets in logs
+# Dangerous - exposes secrets in logs
 .\find_secrets.ps1 -Directory . -ShowSecretValues
 
-# ✅ Safe - secrets are redacted
+# Safe - secrets are redacted
 .\find_secrets.ps1 -Directory .
 ```
 
@@ -551,7 +724,7 @@ $apiKey = Get-AzKeyVaultSecret -VaultName "MyVault" -Name "StripeApiKey"
 - **Audit:** Scheduled comprehensive scans
 - **Response:** Automated rotation procedures
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### "Execution Policy" Error
 **Problem:** Script cannot run due to PowerShell execution policy.
@@ -566,6 +739,43 @@ powershell -ExecutionPolicy Bypass -File find_secrets.ps1 -Directory .
 
 # Option 3: Unblock the downloaded file
 Unblock-File -Path find_secrets.ps1
+```
+
+### PowerShell Not Found in CI/CD
+**Problem:** CI/CD pipeline fails with "pwsh: command not found" or similar.
+
+**Solutions:**
+
+**For GitHub Actions (Linux):**
+```yaml
+# PowerShell is pre-installed, just specify the shell
+- name: Run scan
+  run: |
+    pwsh -File find_secrets.ps1 -Directory .
+  shell: pwsh
+```
+
+**For GitLab CI (Linux):**
+```yaml
+# Use PowerShell container
+image: mcr.microsoft.com/powershell:latest
+```
+
+**For Jenkins (Linux):**
+```groovy
+// Install PowerShell first
+sh '''
+    wget -q https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb
+    sudo dpkg -i packages-microsoft-prod.deb
+    sudo apt-get update
+    sudo apt-get install -y powershell
+'''
+```
+
+**For Docker-based CI:**
+```dockerfile
+FROM mcr.microsoft.com/powershell:latest
+# Use this as base image
 ```
 
 ### Out of Memory Errors
@@ -645,7 +855,7 @@ Start-Process pwsh -Verb RunAs -ArgumentList "-File find_secrets.ps1 -Directory 
 .\find_secrets.ps1 -Directory . -ExcludeFolders @('System Volume Information', '$RECYCLE.BIN')
 ```
 
-## ⚠️ Limitations
+## Limitations
 
 ### Known Limitations
 1. **Encrypted Secrets:** Cannot detect secrets that are encrypted in code
@@ -655,7 +865,7 @@ Start-Process pwsh -Verb RunAs -ArgumentList "-File find_secrets.ps1 -Directory 
 5. **Binary Files:** Cannot scan compiled binaries or archives
 6. **Performance:** Git history scanning scales poorly with repository size
 7. **False Positives:** Test data and examples may trigger detections
-8. **Platform:** Windows-only (PowerShell dependency)
+8. **Platform:** Windows-focused (though cross-platform with PowerShell 7)
 
 ### Not a Replacement For
 - **Proper Secrets Management** - Use Azure Key Vault, AWS Secrets Manager, HashiCorp Vault
@@ -664,7 +874,7 @@ Start-Process pwsh -Verb RunAs -ArgumentList "-File find_secrets.ps1 -Directory 
 - **Monitoring** - Use runtime secret detection and anomaly detection
 - **Training** - Educate developers on secure coding practices
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Here's how to contribute:
 
@@ -694,53 +904,114 @@ Contributions are welcome! Here's how to contribute:
 4. Update documentation
 5. Submit pull request with clear description
 
-## 📄 License
+## License
 
-[Your License Here - e.g., MIT, Apache 2.0, GPL]
+MIT License - See LICENSE file for details
 
-## 🔐 Security Reporting
+## Security Reporting
 
-If you discover a security vulnerability in this tool, please email:
-**security@yourcompany.com**
+If you discover a security vulnerability in this tool, please report it responsibly by opening a GitHub security advisory or contacting the maintainers directly.
 
 Do not open public issues for security vulnerabilities.
 
-## 📞 Support
+## Support
 
-- **Issues:** [GitHub Issues](https://github.com/yourorg/secret-scanner/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/yourorg/secret-scanner/discussions)
-- **Email:** support@yourcompany.com
+- **Issues:** [GitHub Issues](https://github.com/jackalterman/find-secrets-powershell/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/jackalterman/find-secrets-powershell/discussions)
 
-## 📋 Changelog
+## Changelog
 
 ### v3.0 (Current - 2025-01-15)
-- ✨ Added 50+ secret detection patterns
-- ⚡ Parallel processing support (PowerShell 7+)
-- 🎯 Interactive remediation mode
-- 📊 HTML report generation with charts
-- 📋 SARIF output format for GitHub Code Scanning
-- 🔍 Git history scanning capability
-- 🧮 Shannon entropy-based detection
-- 📝 Comprehensive logging system
-- 🎨 Beautiful console output with colors
-- ⚙️ Configurable severity levels
-- 📁 Whitelist support
-- 🔧 Context line display
-- 🚀 Performance optimizations
+- Added 50+ secret detection patterns
+- Parallel processing support (PowerShell 7+)
+- Interactive remediation mode
+- HTML report generation with charts
+- SARIF output format for GitHub Code Scanning
+- Git history scanning capability
+- Shannon entropy-based detection
+- Comprehensive logging system
+- Beautiful console output with colors
+- Configurable severity levels
+- Whitelist support
+- Context line display
+- Performance optimizations
 
 ### Future Roadmap
 - Configuration file support (YAML/JSON)
 - Custom pattern definitions
 - Machine learning-based detection
-- Linux/macOS support via PowerShell Core
+- Enhanced cross-platform support
 - Database scanning
 - Memory scanning
 - Container image scanning
 - Kubernetes secret scanning
 
+## FAQ
+
+### Q: Do I need PowerShell 7 or will 5.1 work?
+**A:** PowerShell 5.1 works but is slower (sequential processing). PowerShell 7+ is recommended for better performance with parallel processing.
+
+### Q: Does this work on Linux or macOS?
+**A:** Yes, with PowerShell 7+ installed. The script is cross-platform compatible. However, some Windows-specific features may have limited functionality.
+
+### Q: Can I run this in my CI/CD pipeline?
+**A:** Yes! See the [CI/CD Integration](#cicd-integration) section for detailed examples. Most CI/CD platforms either have PowerShell pre-installed (GitHub Actions, Azure DevOps on Windows) or you can use the official PowerShell Docker container.
+
+### Q: How do I handle false positives?
+**A:** Use a whitelist file (`-WhitelistFile`), adjust entropy threshold (`-MinEntropy`), or raise minimum severity (`-MinSeverity High`).
+
+### Q: Will this detect all secrets in my code?
+**A:** No tool can guarantee 100% detection. This scanner detects common patterns but may miss:
+- Encrypted or heavily obfuscated secrets
+- Custom encoding schemes
+- Secrets split across multiple variables
+- Runtime-generated secrets
+
+### Q: How long does git history scanning take?
+**A:** Depends on repository size. Small repos (100-1000 commits): 1-5 minutes. Large repos (10,000+ commits): 30+ minutes. Use sparingly.
+
+### Q: Can I add custom secret patterns?
+**A:** Yes, edit the `$script:SecretPatterns` hashtable in the script. Future versions will support external configuration files.
+
+### Q: What should I do if secrets are found?
+**A:** 
+1. Rotate the credentials immediately
+2. Remove from code (use environment variables)
+3. If in git history, use BFG Repo-Cleaner or git-filter-branch
+4. Review access logs for potential compromise
+
+### Q: Does this send data anywhere?
+**A:** No. The script runs entirely locally and does not transmit any data over the network.
+
+### Q: Why does the scan fail in my Linux CI pipeline?
+**A:** PowerShell may not be installed. Either use a Windows runner, install PowerShell 7, or use the official PowerShell Docker image (`mcr.microsoft.com/powershell:latest`).
+
 ---
 
-**⚠️ IMPORTANT DISCLAIMER**
+## Quick Reference Card
+
+```powershell
+# Essential Commands
+.\find_secrets.ps1 -Directory .                          # Basic scan
+.\find_secrets.ps1 -Directory . -OutputFormat json       # JSON output
+.\find_secrets.ps1 -Directory . -GenerateReport          # HTML report
+.\find_secrets.ps1 -Directory . -ScanGitHistory          # Include git history
+.\find_secrets.ps1 -Directory . -Interactive             # Review findings interactively
+.\find_secrets.ps1 -Directory . -MinSeverity High        # High+ severity only
+.\find_secrets.ps1 -Directory . -FailOnCritical          # Fail if Critical found (CI/CD)
+
+# CI/CD Integration
+pwsh -File find_secrets.ps1 -Directory . -OutputFormat sarif -QuietMode -FailOnCritical
+
+# Performance Tuning
+.\find_secrets.ps1 -Directory . -ThrottleLimit 20        # More parallel threads (PS7+)
+.\find_secrets.ps1 -Directory . -MaxFileSizeMB 5         # Smaller file limit
+.\find_secrets.ps1 -Directory . -MinEntropy 4.0          # Higher entropy threshold
+```
+
+---
+
+**IMPORTANT DISCLAIMER**
 
 This tool helps detect secrets but is not foolproof. It should be used as **one layer** of a comprehensive security strategy. Always:
 
@@ -755,4 +1026,4 @@ This tool helps detect secrets but is not foolproof. It should be used as **one 
 
 ---
 
-Made with ❤️ for better security practices
+Made with care for better security practices
