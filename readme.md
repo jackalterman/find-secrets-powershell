@@ -34,10 +34,10 @@ No installation required! Just download the script and run it with PowerShell.
 
 ```powershell
 # Download the script
-Invoke-WebRequest -Uri "https://your-repo/find_secrets.ps1" -OutFile "find_secrets.ps1"
+Invoke-WebRequest -Uri "https://githib.com/jackalterman/find-secrets-powershell/find_secrets.ps1" -OutFile "find_secrets.ps1"
 
 # Or clone the repository
-git clone https://github.com/yourorg/secret-scanner.git
+git clone https://github.com/jackalterman/find-secrets-powershell.git
 cd secret-scanner
 ```
 
