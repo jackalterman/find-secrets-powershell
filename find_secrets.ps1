@@ -112,8 +112,36 @@ param(
     [switch]$FailOnCritical,
     
     [Parameter(Mandatory=$false)]
-    [switch]$QuietMode
+    [switch]$QuietMode,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$UseCache,
+    
+    [Parameter(Mandatory=$false)]
+    [string]$CacheDirectory = ".secret-scanner-cache"
 )
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PERFORMANCE OPTIMIZATION MODULES
+# ═══════════════════════════════════════════════════════════════════════════
+# Load performance optimization modules if available
+$modulePath = Join-Path $PSScriptRoot "modules"
+$performanceModulesLoaded = $false
+
+if (Test-Path $modulePath) {
+    try {
+        Import-Module (Join-Path $modulePath "ParallelProcessing.psm1") -Force
+        Import-Module (Join-Path $modulePath "FileCache.psm1") -Force
+        Import-Module (Join-Path $modulePath "MemoryOptimization.psm1") -Force
+        $performanceModulesLoaded = $true
+        Write-Verbose "Performance optimization modules loaded successfully"
+    }
+    catch {
+        Write-Warning "Failed to load performance modules: $($_.Exception.Message)"
+        $performanceModulesLoaded = $false
+    }
+}
+# ═══════════════════════════════════════════════════════════════════════════
 
 #Requires -Version 5.1
 
@@ -1424,129 +1452,210 @@ try {
     $psVersion = $PSVersionTable.PSVersion.Major
     
     if ($psVersion -ge 7) {
-
-        Write-LogMessage "Starting parallel scan ($ThrottleLimit threads, PowerShell $psVersion)..." "INFO"
-
-        # Capture definitions of the functions as strings
-        $GetEntropyDef       = ${function:Get-Entropy}.ToString()
-        $GetSeverityValueDef = ${function:Get-SeverityValue}.ToString()
-        $TestWhitelistedDef  = ${function:Test-Whitelisted}.ToString()
-        $TestFalsePosDef     = ${function:Test-FalsePositive}.ToString()
-        $GetContextLinesDef  = ${function:Get-ContextLines}.ToString()
-
-
-        $parallelResults = $filesToScan | ForEach-Object -ThrottleLimit $ThrottleLimit -Parallel {
-            $file = $_
-            $localFindings = [System.Collections.Generic.List[object]]::new()
-
-            # Using block to pass variables to the parallel runspace
-            $patterns = $using:SecretPatterns
-            $whitelist = $using:whitelist
-            $minEntropy = $using:MinEntropy
-            $minSevLevel = $using:minSeverityLevel
-            $context = $using:ContextLines
-            $showVals = $using:ShowSecretValues
-            $maxSize = $using:MaxFileSizeMB
-
-            # Re-define the functions in the parallel runspace
-            ${function:Get-Entropy}        = $using:GetEntropyDef
-            ${function:Get-SeverityValue}  = $using:GetSeverityValueDef
-            ${function:Test-Whitelisted}   = $using:TestWhitelistedDef
-            ${function:Test-FalsePositive} = $using:TestFalsePosDef
-            ${function:Get-ContextLines}   = $using:GetContextLinesDef
+        Write-LogMessage "Starting optimized parallel scan (PowerShell $psVersion)..." "INFO"
+        
+        # ═══ PERFORMANCE OPTIMIZATION: CACHING ═══
+        $cache = $null
+        $filesToActuallyScan = $filesToScan
+        
+        if ($UseCache -and $performanceModulesLoaded) {
+            Write-LogMessage "Initializing file cache..." "INFO"
+            $cache = Initialize-ScanCache -CacheDirectory $CacheDirectory
             
-            try {
-                $fileInfo = Get-Item $file.FullName -ErrorAction Stop
+            $cacheStats = Get-CacheStatistics -Cache $cache
+            Write-LogMessage "Cache loaded: $($cacheStats.TotalCachedFiles) entries" "INFO"
+            
+            # Filter to only changed files
+            $filesToActuallyScan = $filesToScan | Where-Object {
+                Test-FileChanged -File $_ -Cache $cache
+            }
+            
+            $skippedCount = $filesToScan.Count - $filesToActuallyScan.Count
+            $cacheHitRate = if ($filesToScan.Count -gt 0) {
+                [Math]::Round(($skippedCount / $filesToScan.Count) * 100, 1)
+            } else { 0 }
+            
+            Write-LogMessage "Cache hit: $cacheHitRate% ($skippedCount files skipped)" "SUCCESS"
+        }
+        
+        # ═══ PERFORMANCE OPTIMIZATION: MEMORY RECOMMENDATIONS ═══
+        if ($performanceModulesLoaded -and $filesToActuallyScan.Count -gt 0) {
+            $avgSize = ($filesToActuallyScan | Measure-Object -Property Length -Average).Average / 1KB
+            $memRec = Get-MemoryRecommendations `
+                -FileCount $filesToActuallyScan.Count `
+                -ThrottleLimit $ThrottleLimit `
+                -AverageFileSizeKB $avgSize
+            
+            if ($memRec.Recommendations.Count -gt 0) {
+                foreach ($rec in $memRec.Recommendations) {
+                    Write-LogMessage $rec "WARNING"
+                }
+            }
+        }
+        
+        # ═══ PERFORMANCE OPTIMIZATION: OPTIMIZED PARALLEL SCAN ═══
+        if ($performanceModulesLoaded) {
+            $parallelResults = Invoke-OptimizedParallelScan `
+                -Files $filesToActuallyScan `
+                -Patterns $script:SecretPatterns `
+                -Whitelist $whitelist `
+                -MinEntropy $MinEntropy `
+                -MinSeverityLevel $minSeverityLevel `
+                -ContextLines $ContextLines `
+                -ThrottleLimit $ThrottleLimit `
+                -ShowSecretValues $ShowSecretValues `
+                -MaxFileSizeMB $MaxFileSizeMB `
+                -GetEntropyFunction ${function:Get-Entropy} `
+                -GetSeverityValueFunction ${function:Get-SeverityValue} `
+                -TestWhitelistedFunction ${function:Test-Whitelisted} `
+                -TestFalsePositiveFunction ${function:Test-FalsePositive} `
+                -GetContextLinesFunction ${function:Get-ContextLines}
+        }
+        else {
+            # Fallback to standard parallel processing
+            Write-LogMessage "Using standard parallel processing..." "INFO"
+            
+            $GetEntropyDef       = ${function:Get-Entropy}.ToString()
+            $GetSeverityValueDef = ${function:Get-SeverityValue}.ToString()
+            $TestWhitelistedDef  = ${function:Test-Whitelisted}.ToString()
+            $TestFalsePosDef     = ${function:Test-FalsePositive}.ToString()
+            $GetContextLinesDef  = ${function:Get-ContextLines}.ToString()
 
-                if ($fileInfo.Length -gt ($maxSize * 1MB)) { 
-                    # Return empty result for skipped file
-                    return [PSCustomObject]@{ File = $file.FullName; Findings = $localFindings }
-                }
+            $parallelResults = $filesToActuallyScan | ForEach-Object -ThrottleLimit $ThrottleLimit -Parallel {
+                $file = $_
+                $localFindings = [System.Collections.Generic.List[object]]::new()
+
+                $patterns = $using:SecretPatterns
+                $whitelist = $using:whitelist
+                $minEntropy = $using:MinEntropy
+                $minSevLevel = $using:minSeverityLevel
+                $context = $using:ContextLines
+                $showVals = $using:ShowSecretValues
+                $maxSize = $using:MaxFileSizeMB
+
+                ${function:Get-Entropy}        = $using:GetEntropyDef
+                ${function:Get-SeverityValue}  = $using:GetSeverityValueDef
+                ${function:Test-Whitelisted}   = $using:TestWhitelistedDef
+                ${function:Test-FalsePositive} = $using:TestFalsePosDef
+                ${function:Get-ContextLines}   = $using:GetContextLinesDef
                 
-                $content = Get-Content -Path $file.FullName -Raw -ErrorAction Stop
-                if ([string]::IsNullOrWhiteSpace($content)) { 
-                    # Return empty result for skipped file
-                    return [PSCustomObject]@{ File = $file.FullName; Findings = $localFindings }
-                }
-                
-                foreach ($category in $patterns.Keys) {
-                    $patternInfo = $patterns[$category]
-                    $severity = $patternInfo.Severity
-                    $severityValue = Get-SeverityValue $severity
+                try {
+                    $fileInfo = Get-Item $file.FullName -ErrorAction Stop
+
+                    if ($fileInfo.Length -gt ($maxSize * 1MB)) { 
+                        return [PSCustomObject]@{ File = $file.FullName; Findings = $localFindings }
+                    }
                     
-                    if ($severityValue -lt $minSevLevel) { continue }
+                    $content = Get-Content -Path $file.FullName -Raw -ErrorAction Stop
+                    if ([string]::IsNullOrWhiteSpace($content)) { 
+                        return [PSCustomObject]@{ File = $file.FullName; Findings = $localFindings }
+                    }
                     
-                    foreach ($pattern in $patternInfo.Patterns) {
-                        try {
-                            $matches = [regex]::Matches($content, $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-                            
-                            foreach ($match in $matches) {
-                                $matchedText = $match.Value
-                                $secretValue = if ($match.Groups.Count -gt 1) { $match.Groups[1].Value } else { $matchedText }
+                    foreach ($category in $patterns.Keys) {
+                        $patternInfo = $patterns[$category]
+                        $severity = $patternInfo.Severity
+                        $severityValue = Get-SeverityValue $severity
+                        
+                        if ($severityValue -lt $minSevLevel) { continue }
+                        
+                        foreach ($pattern in $patternInfo.Patterns) {
+                            try {
+                                $matches = [regex]::Matches($content, $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
                                 
-                                if (Test-FalsePositive -Value $secretValue -FalsePositiveKeywords $patternInfo.FalsePositiveKeywords) {
-                                    continue
-                                }
-                                
-                                $entropy = Get-Entropy $secretValue
-                                if ($patternInfo.Entropy -and $entropy -lt $minEntropy) { continue }
-                                
-                                if (Test-Whitelisted -Finding $matchedText -FilePath $file.FullName -Whitelist $whitelist) { continue }
-                                
-                                $lineNumber = ($content.Substring(0, $match.Index) -split "`n").Count
-                                $contextLines = Get-ContextLines -Content $content -LineNumber $lineNumber -ContextLineCount $context
-                                
-                                $displayValue = if ($showVals) { 
-                                    $matchedText 
-                                } else {
-                                    if ($matchedText.Length -le 10) {
-                                        "***REDACTED***"
-                                    } else {
-                                        $matchedText.Substring(0, [Math]::Min(10, $matchedText.Length)) + "***REDACTED***"
+                                foreach ($match in $matches) {
+                                    $matchedText = $match.Value
+                                    $secretValue = if ($match.Groups.Count -gt 1) { $match.Groups[1].Value } else { $matchedText }
+                                    
+                                    if (Test-FalsePositive -Value $secretValue -FalsePositiveKeywords $patternInfo.FalsePositiveKeywords) {
+                                        continue
                                     }
+                                    
+                                    $entropy = Get-Entropy $secretValue
+                                    if ($patternInfo.Entropy -and $entropy -lt $minEntropy) { continue }
+                                    
+                                    if (Test-Whitelisted -Finding $matchedText -FilePath $file.FullName -Whitelist $whitelist) { continue }
+                                    
+                                    $lineNumber = ($content.Substring(0, $match.Index) -split "`n").Count
+                                    $contextLines = Get-ContextLines -Content $content -LineNumber $lineNumber -ContextLineCount $context
+                                    
+                                    $displayValue = if ($showVals) { 
+                                        $matchedText 
+                                    } else {
+                                        if ($matchedText.Length -le 10) {
+                                            "***REDACTED***"
+                                        } else {
+                                            $matchedText.Substring(0, [Math]::Min(10, $matchedText.Length)) + "***REDACTED***"
+                                        }
+                                    }
+                                    
+                                    if ($displayValue.Length -gt 150) {
+                                        $displayValue = $displayValue.Substring(0, 150) + "..."
+                                    }
+                                    
+                                    $finding = [PSCustomObject]@{
+                                        Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                                        Category = $category
+                                        Severity = $severity
+                                        Description = $patternInfo.Description
+                                        Remediation = $patternInfo.Remediation
+                                        FilePath = $file.FullName
+                                        LineNumber = $lineNumber
+                                        ColumnStart = $match.Index
+                                        MatchedValue = $displayValue
+                                        Entropy = [Math]::Round($entropy, 2)
+                                        ContextLines = $contextLines
+                                        FileExtension = $fileInfo.Extension
+                                        FileSize = $fileInfo.Length
+                                    }
+                                    
+                                    $localFindings.Add($finding)
                                 }
-                                
-                                if ($displayValue.Length -gt 150) {
-                                    $displayValue = $displayValue.Substring(0, 150) + "..."
-                                }
-                                
-                                $finding = [PSCustomObject]@{
-                                    Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-                                    Category = $category
-                                    Severity = $severity
-                                    Description = $patternInfo.Description
-                                    Remediation = $patternInfo.Remediation
-                                    FilePath = $file.FullName
-                                    LineNumber = $lineNumber
-                                    ColumnStart = $match.Index
-                                    MatchedValue = $displayValue
-                                    Entropy = [Math]::Round($entropy, 2)
-                                    ContextLines = $contextLines
-                                    FileExtension = $fileInfo.Extension
-                                    FileSize = $fileInfo.Length
-                                }
-                                
-                                $localFindings.Add($finding)
+                            } catch {
+                                # Silently continue on regex errors
                             }
-                        } catch {
-                            # Silently continue on regex errors
                         }
                     }
+                } catch {
+                    # Error handling in parallel threads
                 }
-            } catch {
-                # Error handling in parallel threads
-            }
 
-            # Output the result object for this file
-            [PSCustomObject]@{
-                File = $file.FullName
-                Findings = $localFindings
+                [PSCustomObject]@{
+                    File = $file.FullName
+                    Findings = $localFindings
+                }
             }
         }
 
-        # Aggregate results from parallel execution
+        # Update cache if enabled
+        if ($UseCache -and $cache -and $performanceModulesLoaded) {
+            Write-LogMessage "Updating cache..." "INFO"
+            
+            foreach ($result in $parallelResults) {
+                if (-not $result.Skipped) {
+                    $file = Get-Item $result.File -ErrorAction SilentlyContinue
+                    if ($file) {
+                        $categories = $result.Findings | Select-Object -ExpandProperty Category -Unique
+                        Update-FileCache `
+                            -File $file `
+                            -Cache $cache `
+                            -FindingsCount $result.Findings.Count `
+                            -FindingCategories $categories
+                    }
+                }
+            }
+            
+            # Optimize and save cache
+            Optimize-ScanCache -Cache $cache -CurrentFiles $filesToScan
+            Save-ScanCache -Cache $cache
+            
+            $finalStats = Get-CacheStatistics -Cache $cache
+            Write-LogMessage "Cache updated: $($finalStats.TotalCachedFiles) entries" "SUCCESS"
+        }
+
+        # Aggregate results
         $script:ScannedFiles = $parallelResults.Count
         $allParallelFindings = $parallelResults.Findings | ForEach-Object { $_ }
+        
         if ($allParallelFindings) {
             foreach ($finding in ($allParallelFindings | Sort-Object @{ Expression = { Get-SeverityValue $_.Severity }; Descending = $true }, FilePath, LineNumber)) {
                 $msg = "[$($finding.Severity)] $($finding.Category) | $($finding.FilePath):$($finding.LineNumber) | Entropy: $($finding.Entropy)"
@@ -1556,6 +1665,12 @@ try {
                 Write-LogMessage $contextMsg "CRITICAL"
             }
             $script:AllFindings.AddRange(@($allParallelFindings))
+        }
+        
+        # Display memory usage if available
+        if ($performanceModulesLoaded) {
+            $memUsage = Get-MemoryUsage
+            Write-LogMessage "Peak memory usage: $($memUsage.PeakWorkingSetMB) MB" "INFO"
         }
 
     } else {
@@ -1614,6 +1729,31 @@ try {
         Write-Host "$($duration.TotalSeconds.ToString('F2')) seconds" -ForegroundColor Gray
         Write-Host "  Log File             : " -NoNewline -ForegroundColor White
         Write-Host $LogFile -ForegroundColor Gray
+        Write-Host ""
+        
+        # Display optimization statistics
+        if ($UseCache -and $performanceModulesLoaded -and $cache) {
+            Write-Host ""
+            Write-Host "  Cache Statistics:" -ForegroundColor White
+            $cacheStats = Get-CacheStatistics -Cache $cache
+            Write-Host "    Cached Files       : " -NoNewline -ForegroundColor White
+            Write-Host $cacheStats.TotalCachedFiles -ForegroundColor Gray
+            Write-Host "    Files with Findings: " -NoNewline -ForegroundColor White
+            Write-Host $cacheStats.FilesWithFindings -ForegroundColor Gray
+            Write-Host "    Last Updated       : " -NoNewline -ForegroundColor White
+            Write-Host $cacheStats.LastUpdated -ForegroundColor Gray
+        }
+        
+        if ($performanceModulesLoaded) {
+            $memUsage = Get-MemoryUsage
+            Write-Host ""
+            Write-Host "  Memory Statistics:" -ForegroundColor White
+            Write-Host "    Peak Usage         : " -NoNewline -ForegroundColor White
+            Write-Host "$($memUsage.PeakWorkingSetMB) MB" -ForegroundColor Gray
+            Write-Host "    Current Usage      : " -NoNewline -ForegroundColor White
+            Write-Host "$($memUsage.WorkingSetMB) MB" -ForegroundColor Gray
+        }
+        
         Write-Host ""
         Write-Host "  Findings by Severity:" -ForegroundColor White
         Write-Host "    Critical           : " -NoNewline -ForegroundColor White
