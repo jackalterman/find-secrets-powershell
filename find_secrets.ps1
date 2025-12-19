@@ -575,8 +575,13 @@ function Get-Whitelist {
     }
     
     try {
-    $content = Get-Content -Path $WhitelistPath -ErrorAction Stop
-            return @($content | Where-Object { $_ -notmatch '^\s*#' -and $_ -notmatch '^\s*$' })    } catch {
+        $content = Get-Content -Path $WhitelistPath -ErrorAction Stop
+        $filteredContent = $content | Where-Object { $_ -notmatch '^\s*#' -and $_ -notmatch '^\s*$' }
+        if ($null -eq $filteredContent) {
+            return @()
+        }
+        return $filteredContent
+    } catch {
         Write-LogMessage "Failed to load whitelist: $($_.Exception.Message)" "WARNING"
         return @()
     }
