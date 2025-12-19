@@ -100,8 +100,8 @@ function Invoke-OptimizedParallelScan {
         [Parameter(Mandatory)]
         [hashtable]$Patterns,
         
-        [Parameter(Mandatory)]
-        [array]$Whitelist,
+        [Parameter(Mandatory = $false)]
+        [array]$Whitelist = @(),
         
         [Parameter(Mandatory)]
         [double]$MinEntropy,
@@ -118,15 +118,15 @@ function Invoke-OptimizedParallelScan {
         
         [int]$MaxFileSizeMB = 10,
         
-        [scriptblock]$GetEntropyFunction,
+        [string]$GetEntropyFunction,
         
-        [scriptblock]$GetSeverityValueFunction,
+        [string]$GetSeverityValueFunction,
         
-        [scriptblock]$TestWhitelistedFunction,
+        [string]$TestWhitelistedFunction,
         
-        [scriptblock]$TestFalsePositiveFunction,
+        [string]$TestFalsePositiveFunction,
         
-        [scriptblock]$GetContextLinesFunction
+        [string]$GetContextLinesFunction
     )
     
     # Calculate optimal throttle limit
@@ -148,17 +148,12 @@ function Invoke-OptimizedParallelScan {
         $showVals = $using:ShowSecretValues
         $maxSize = $using:MaxFileSizeMB
         
-        # Import function definitions
-        $getEntropyFunc = $using:GetEntropyFunction
-        $GetEntropyDef = $getEntropyFunc.ToString()
-        $getSeverityValueFunc = $using:GetSeverityValueFunction
-        $GetSeverityValueDef = $getSeverityValueFunc.ToString()
-        $testWhitelistedFunc = $using:TestWhitelistedFunction
-        $TestWhitelistedDef = $testWhitelistedFunc.ToString()
-        $testFalsePositiveFunc = $using:TestFalsePositiveFunction
-        $TestFalsePositiveDef = $testFalsePositiveFunc.ToString()
-        $getContextLinesFunc = $using:GetContextLinesFunction
-        $GetContextLinesDef = $getContextLinesFunc.ToString()
+        # Recreate function definitions from parent scope strings
+        $GetEntropyDef = $using:GetEntropyFunction
+        $GetSeverityValueDef = $using:GetSeverityValueFunction
+        $TestWhitelistedDef = $using:TestWhitelistedFunction
+        $TestFalsePositiveDef = $using:TestFalsePositiveFunction
+        $GetContextLinesDef = $using:GetContextLinesFunction
         
         # Recreate functions in parallel runspace
         ${function:Get-Entropy} = [scriptblock]::Create($GetEntropyDef)
@@ -171,10 +166,10 @@ function Invoke-OptimizedParallelScan {
             # Check file size
             if ($file.Length -gt ($maxSize * 1MB)) {
                 return [PSCustomObject]@{
-                    File = $file.FullName
+                    File     = $file.FullName
                     Findings = @()
-                    Skipped = $true
-                    Reason = "File too large"
+                    Skipped  = $true
+                    Reason   = "File too large"
                 }
             }
             
@@ -185,19 +180,19 @@ function Invoke-OptimizedParallelScan {
             }
             catch {
                 return [PSCustomObject]@{
-                    File = $file.FullName
+                    File     = $file.FullName
                     Findings = @()
-                    Skipped = $true
-                    Reason = "Read error"
+                    Skipped  = $true
+                    Reason   = "Read error"
                 }
             }
             
             if ([string]::IsNullOrWhiteSpace($content)) {
                 return [PSCustomObject]@{
-                    File = $file.FullName
+                    File     = $file.FullName
                     Findings = @()
-                    Skipped = $true
-                    Reason = "Empty file"
+                    Skipped  = $true
+                    Reason   = "Empty file"
                 }
             }
             
@@ -223,7 +218,8 @@ function Invoke-OptimizedParallelScan {
                             $matchedText = $match.Value
                             $secretValue = if ($match.Groups.Count -gt 1) {
                                 $match.Groups[1].Value
-                            } else {
+                            }
+                            else {
                                 $matchedText
                             }
                             
@@ -250,10 +246,12 @@ function Invoke-OptimizedParallelScan {
                             # Redact value
                             $displayValue = if ($showVals) {
                                 $matchedText
-                            } else {
+                            }
+                            else {
                                 if ($matchedText.Length -le 10) {
                                     "***REDACTED***"
-                                } else {
+                                }
+                                else {
                                     $matchedText.Substring(0, [Math]::Min(10, $matchedText.Length)) + "***REDACTED***"
                                 }
                             }
@@ -264,19 +262,19 @@ function Invoke-OptimizedParallelScan {
                             
                             # Create finding
                             $finding = [PSCustomObject]@{
-                                Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-                                Category = $category
-                                Severity = $severity
-                                Description = $patternInfo.Description
-                                Remediation = $patternInfo.Remediation
-                                FilePath = $file.FullName
-                                LineNumber = $lineNumber
-                                ColumnStart = $match.Index
-                                MatchedValue = $displayValue
-                                Entropy = [Math]::Round($entropy, 2)
-                                ContextLines = $contextLines
+                                Timestamp     = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                                Category      = $category
+                                Severity      = $severity
+                                Description   = $patternInfo.Description
+                                Remediation   = $patternInfo.Remediation
+                                FilePath      = $file.FullName
+                                LineNumber    = $lineNumber
+                                ColumnStart   = $match.Index
+                                MatchedValue  = $displayValue
+                                Entropy       = [Math]::Round($entropy, 2)
+                                ContextLines  = $contextLines
                                 FileExtension = $file.Extension
-                                FileSize = $file.Length
+                                FileSize      = $file.Length
                             }
                             
                             $localFindings.Add($finding)
@@ -290,18 +288,18 @@ function Invoke-OptimizedParallelScan {
             
             # Return result
             [PSCustomObject]@{
-                File = $file.FullName
+                File     = $file.FullName
                 Findings = $localFindings.ToArray()
-                Skipped = $false
-                Reason = $null
+                Skipped  = $false
+                Reason   = $null
             }
         }
         catch {
             [PSCustomObject]@{
-                File = $file.FullName
+                File     = $file.FullName
                 Findings = @()
-                Skipped = $true
-                Reason = "Error"
+                Skipped  = $true
+                Reason   = "Error"
             }
         }
     }

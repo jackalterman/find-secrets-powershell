@@ -10,6 +10,8 @@
     Path to YAML/JSON configuration file with custom patterns and settings
 .PARAMETER LogFile
     Output log file path (default: secret-scan-TIMESTAMP.log)
+.PARAMETER Log
+    Enable logging to a file
 .PARAMETER OutputFormat
     Output format: text, json, csv, html, sarif (default: text)
 .PARAMETER ThrottleLimit
@@ -50,74 +52,77 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory=$true, HelpMessage="Root directory to scan")]
-    [ValidateScript({Test-Path $_ -PathType Container})]
+    [Parameter(Mandatory = $true, HelpMessage = "Root directory to scan")]
+    [ValidateScript({ Test-Path $_ -PathType Container })]
     [string]$Directory,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [string]$ConfigFile,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [string]$LogFile = "secret-scan-$(Get-Date -Format 'yyyyMMdd-HHmmss').log",
+
+    [Parameter(Mandatory = $false)]
+    [switch]$Log,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [ValidateSet("text", "json", "csv", "html", "sarif")]
     [string]$OutputFormat = "text",
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [ValidateRange(1, 50)]
     [int]$ThrottleLimit = 10,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [switch]$ShowProgress,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [string[]]$ExcludeFolders = @('.git', '.svn', 'node_modules', 'bin', 'obj', '.vs', '.vscode', 'target', 'build', 'dist', 'vendor', '__pycache__', '.idea', 'bower_components', 'jspm_packages', '.next'),
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [string[]]$ExcludeFiles = @('*.min.js', '*.min.css', '*.map', '*.dll', '*.exe', '*.zip', '*.tar', '*.gz', '*.jpg', '*.png', '*.gif', '*.pdf', '*.woff*', '*.ttf', '*.eot', '.env'),
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [switch]$ShowSecretValues,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [string]$WhitelistFile,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [ValidateRange(0.0, 8.0)]
     [double]$MinEntropy = 3.5,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [ValidateSet("Low", "Medium", "High", "Critical")]
     [string]$MinSeverity = "Low",
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [ValidateRange(1, 1000)]
     [int]$MaxFileSizeMB = 10,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [switch]$ScanGitHistory,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [ValidateRange(0, 10)]
     [int]$ContextLines = 2,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [switch]$Interactive,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [switch]$GenerateReport,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [switch]$FailOnCritical,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [switch]$QuietMode,
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [switch]$UseCache,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [string]$CacheDirectory = ".secret-scanner-cache"
 )
 
@@ -153,348 +158,348 @@ $script:StartTime = Get-Date
 
 # Enhanced secret patterns with metadata
 $script:SecretPatterns = @{
-    'AWS Access Key ID' = @{
-        Patterns = @('(?<![A-Z0-9])(AKIA|ABIA|ACCA|ASIA)[0-9A-Z]{16}(?![A-Z0-9])')
-        Severity = 'Critical'
-        Description = 'AWS Access Key ID - grants access to AWS resources'
-        Remediation = 'Rotate key immediately in AWS IAM. Use AWS Secrets Manager or environment variables.'
-        Entropy = $false
+    'AWS Access Key ID'                       = @{
+        Patterns              = @('(?<![A-Z0-9])(AKIA|ABIA|ACCA|ASIA)[0-9A-Z]{16}(?![A-Z0-9])')
+        Severity              = 'Critical'
+        Description           = 'AWS Access Key ID - grants access to AWS resources'
+        Remediation           = 'Rotate key immediately in AWS IAM. Use AWS Secrets Manager or environment variables.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'AWS Secret Access Key' = @{
-        Patterns = @("(?i)aws[_-]?secret[_-]?access[_-]?key[`"\s]*[:=][`"\s]*[`"\']?([A-Za-z0-9/+=]{40})[`"\']?")
-        Severity = 'Critical'
-        Description = 'AWS Secret Access Key - provides full AWS account access'
-        Remediation = 'Rotate immediately in AWS IAM. Enable MFA. Use AWS Secrets Manager.'
-        Entropy = $true
+    'AWS Secret Access Key'                   = @{
+        Patterns              = @("(?i)aws[_-]?secret[_-]?access[_-]?key[`"\s]*[:=][`"\s]*[`"\']?([A-Za-z0-9/+=]{40})[`"\']?")
+        Severity              = 'Critical'
+        Description           = 'AWS Secret Access Key - provides full AWS account access'
+        Remediation           = 'Rotate immediately in AWS IAM. Enable MFA. Use AWS Secrets Manager.'
+        Entropy               = $true
         FalsePositiveKeywords = @('example', 'sample', 'test', 'dummy', 'fake', 'placeholder')
     }
-    'AWS Session Token' = @{
-        Patterns = @("(?i)aws[_-]?session[_-]?token[`"\s]*[:=][`"\s]*[`"\']?([A-Za-z0-9/+=]{100,})[`"\']?")
-        Severity = 'High'
-        Description = 'AWS temporary session token'
-        Remediation = 'Session tokens expire automatically. Verify token is not from production.'
-        Entropy = $false
+    'AWS Session Token'                       = @{
+        Patterns              = @("(?i)aws[_-]?session[_-]?token[`"\s]*[:=][`"\s]*[`"\']?([A-Za-z0-9/+=]{100,})[`"\']?")
+        Severity              = 'High'
+        Description           = 'AWS temporary session token'
+        Remediation           = 'Session tokens expire automatically. Verify token is not from production.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'GitHub Personal Access Token' = @{
-        Patterns = @('ghp_[a-zA-Z0-9]{36}', 'gho_[a-zA-Z0-9]{36}', 'ghu_[a-zA-Z0-9]{36}', 'ghs_[a-zA-Z0-9]{36}', 'ghr_[a-zA-Z0-9]{36}')
-        Severity = 'Critical'
-        Description = 'GitHub Personal Access Token - repository and org access'
-        Remediation = 'Revoke token at github.com/settings/tokens. Enable SSO. Use GitHub Apps.'
-        Entropy = $false
+    'GitHub Personal Access Token'            = @{
+        Patterns              = @('ghp_[a-zA-Z0-9]{36}', 'gho_[a-zA-Z0-9]{36}', 'ghu_[a-zA-Z0-9]{36}', 'ghs_[a-zA-Z0-9]{36}', 'ghr_[a-zA-Z0-9]{36}')
+        Severity              = 'Critical'
+        Description           = 'GitHub Personal Access Token - repository and org access'
+        Remediation           = 'Revoke token at github.com/settings/tokens. Enable SSO. Use GitHub Apps.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'GitHub OAuth Token' = @{
-        Patterns = @("(?i)github[_-]?oauth[`"\s]*[:=][`"\s]*[`"\']?([a-f0-9]{40})[`"\']?")
-        Severity = 'Critical'
-        Description = 'GitHub OAuth access token'
-        Remediation = 'Revoke token immediately. Rotate OAuth app credentials.'
-        Entropy = $true
+    'GitHub OAuth Token'                      = @{
+        Patterns              = @("(?i)github[_-]?oauth[`"\s]*[:=][`"\s]*[`"\']?([a-f0-9]{40})[`"\']?")
+        Severity              = 'Critical'
+        Description           = 'GitHub OAuth access token'
+        Remediation           = 'Revoke token immediately. Rotate OAuth app credentials.'
+        Entropy               = $true
         FalsePositiveKeywords = @('sha1', 'hash', 'commit')
     }
-    'GitLab Personal Access Token' = @{
-        Patterns = @('glpat-[a-zA-Z0-9_-]{20,}')
-        Severity = 'Critical'
-        Description = 'GitLab Personal Access Token'
-        Remediation = 'Revoke token in GitLab settings. Use deploy tokens for CI/CD.'
-        Entropy = $false
+    'GitLab Personal Access Token'            = @{
+        Patterns              = @('glpat-[a-zA-Z0-9_-]{20,}')
+        Severity              = 'Critical'
+        Description           = 'GitLab Personal Access Token'
+        Remediation           = 'Revoke token in GitLab settings. Use deploy tokens for CI/CD.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'Generic High-Entropy API Key' = @{
-        Patterns = @("(?i)(api[_-]?key|apikey|api[_-]?secret)[`"\s]*[:=][`"\s]*[`"\']([a-zA-Z0-9_\-]{32,})[`"\']?")
-        Severity = 'High'
-        Description = 'Generic API key with high entropy'
-        Remediation = 'Identify service and rotate key. Use secrets management system.'
-        Entropy = $true
+    'Generic High-Entropy API Key'            = @{
+        Patterns              = @("(?i)(api[_-]?key|apikey|api[_-]?secret)[`"\s]*[:=][`"\s]*[`"\']([a-zA-Z0-9_\-]{32,})[`"\']?")
+        Severity              = 'High'
+        Description           = 'Generic API key with high entropy'
+        Remediation           = 'Identify service and rotate key. Use secrets management system.'
+        Entropy               = $true
         FalsePositiveKeywords = @('your', 'example', 'insert', 'placeholder')
     }
-    'Private Key (PEM)' = @{
-        Patterns = @('-----BEGIN[ A-Z]*PRIVATE KEY-----')
-        Severity = 'Critical'
-        Description = 'PEM-encoded private key'
-        Remediation = 'Remove immediately. Generate new keypair. Never commit private keys.'
-        Entropy = $false
+    'Private Key (PEM)'                       = @{
+        Patterns              = @('-----BEGIN[ A-Z]*PRIVATE KEY-----')
+        Severity              = 'Critical'
+        Description           = 'PEM-encoded private key'
+        Remediation           = 'Remove immediately. Generate new keypair. Never commit private keys.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'RSA Private Key' = @{
-        Patterns = @('-----BEGIN RSA PRIVATE KEY-----')
-        Severity = 'Critical'
-        Description = 'RSA private key'
-        Remediation = 'Delete key. Generate new keypair. Use hardware security module for production.'
-        Entropy = $false
+    'RSA Private Key'                         = @{
+        Patterns              = @('-----BEGIN RSA PRIVATE KEY-----')
+        Severity              = 'Critical'
+        Description           = 'RSA private key'
+        Remediation           = 'Delete key. Generate new keypair. Use hardware security module for production.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'SSH Private Key' = @{
-        Patterns = @('-----BEGIN OPENSSH PRIVATE KEY-----')
-        Severity = 'Critical'
-        Description = 'OpenSSH private key'
-        Remediation = 'Remove key. Generate new SSH keypair with passphrase.'
-        Entropy = $false
+    'SSH Private Key'                         = @{
+        Patterns              = @('-----BEGIN OPENSSH PRIVATE KEY-----')
+        Severity              = 'Critical'
+        Description           = 'OpenSSH private key'
+        Remediation           = 'Remove key. Generate new SSH keypair with passphrase.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'PGP Private Key' = @{
-        Patterns = @('-----BEGIN PGP PRIVATE KEY BLOCK-----')
-        Severity = 'Critical'
-        Description = 'PGP private key block'
-        Remediation = 'Revoke key. Generate new PGP keypair with strong passphrase.'
-        Entropy = $false
+    'PGP Private Key'                         = @{
+        Patterns              = @('-----BEGIN PGP PRIVATE KEY BLOCK-----')
+        Severity              = 'Critical'
+        Description           = 'PGP private key block'
+        Remediation           = 'Revoke key. Generate new PGP keypair with strong passphrase.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'JWT Token' = @{
-        Patterns = @('eyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}')
-        Severity = 'High'
-        Description = 'JSON Web Token - may contain sensitive claims'
-        Remediation = 'Verify token expiration. Rotate signing keys if compromised.'
-        Entropy = $false
+    'JWT Token'                               = @{
+        Patterns              = @('eyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}')
+        Severity              = 'High'
+        Description           = 'JSON Web Token - may contain sensitive claims'
+        Remediation           = 'Verify token expiration. Rotate signing keys if compromised.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'Google API Key' = @{
-        Patterns = @('AIza[0-9A-Za-z_-]{35}')
-        Severity = 'High'
-        Description = 'Google Cloud API key'
-        Remediation = 'Delete key in Google Cloud Console. Restrict API key usage by IP/app.'
-        Entropy = $false
+    'Google API Key'                          = @{
+        Patterns              = @('AIza[0-9A-Za-z_-]{35}')
+        Severity              = 'High'
+        Description           = 'Google Cloud API key'
+        Remediation           = 'Delete key in Google Cloud Console. Restrict API key usage by IP/app.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'Google OAuth Client ID' = @{
-        Patterns = @('[0-9]+-[0-9A-Za-z_-]{32}\.apps\.googleusercontent\.com')
-        Severity = 'High'
-        Description = 'Google OAuth client ID'
-        Remediation = 'Rotate OAuth credentials in Google Cloud Console.'
-        Entropy = $false
+    'Google OAuth Client ID'                  = @{
+        Patterns              = @('[0-9]+-[0-9A-Za-z_-]{32}\.apps\.googleusercontent\.com')
+        Severity              = 'High'
+        Description           = 'Google OAuth client ID'
+        Remediation           = 'Rotate OAuth credentials in Google Cloud Console.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'Slack Token' = @{
-        Patterns = @('xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[0-9]{10,13}-[a-z0-9]{32}')
-        Severity = 'High'
-        Description = 'Slack API token'
-        Remediation = 'Revoke token at api.slack.com. Regenerate app credentials.'
-        Entropy = $false
+    'Slack Token'                             = @{
+        Patterns              = @('xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[0-9]{10,13}-[a-z0-9]{32}')
+        Severity              = 'High'
+        Description           = 'Slack API token'
+        Remediation           = 'Revoke token at api.slack.com. Regenerate app credentials.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'Slack Webhook' = @{
-        Patterns = @('https://hooks\.slack\.com/services/T[a-zA-Z0-9_]+/B[a-zA-Z0-9_]+/[a-zA-Z0-9_]+')
-        Severity = 'Medium'
-        Description = 'Slack incoming webhook URL'
-        Remediation = 'Regenerate webhook URL in Slack app settings.'
-        Entropy = $false
+    'Slack Webhook'                           = @{
+        Patterns              = @('https://hooks\.slack\.com/services/T[a-zA-Z0-9_]+/B[a-zA-Z0-9_]+/[a-zA-Z0-9_]+')
+        Severity              = 'Medium'
+        Description           = 'Slack incoming webhook URL'
+        Remediation           = 'Regenerate webhook URL in Slack app settings.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'Stripe Live API Key' = @{
-        Patterns = @('sk_live_[0-9a-zA-Z]{24,}')
-        Severity = 'Critical'
-        Description = 'Stripe live API key - payment processing access'
-        Remediation = 'Roll key immediately in Stripe dashboard. Alert security team.'
-        Entropy = $false
+    'Stripe Live API Key'                     = @{
+        Patterns              = @('sk_live_[0-9a-zA-Z]{24,}')
+        Severity              = 'Critical'
+        Description           = 'Stripe live API key - payment processing access'
+        Remediation           = 'Roll key immediately in Stripe dashboard. Alert security team.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'Stripe Restricted Key' = @{
-        Patterns = @('rk_live_[0-9a-zA-Z]{24,}')
-        Severity = 'High'
-        Description = 'Stripe restricted API key'
-        Remediation = 'Roll key in Stripe dashboard. Review key permissions.'
-        Entropy = $false
+    'Stripe Restricted Key'                   = @{
+        Patterns              = @('rk_live_[0-9a-zA-Z]{24,}')
+        Severity              = 'High'
+        Description           = 'Stripe restricted API key'
+        Remediation           = 'Roll key in Stripe dashboard. Review key permissions.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'Stripe Test Key' = @{
-        Patterns = @('sk_test_[0-9a-zA-Z]{24,}')
-        Severity = 'Low'
-        Description = 'Stripe test API key'
-        Remediation = 'Roll key as precaution. Test keys should not be in production.'
-        Entropy = $false
+    'Stripe Test Key'                         = @{
+        Patterns              = @('sk_test_[0-9a-zA-Z]{24,}')
+        Severity              = 'Low'
+        Description           = 'Stripe test API key'
+        Remediation           = 'Roll key as precaution. Test keys should not be in production.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'Square Access Token' = @{
-        Patterns = @('sq0atp-[0-9A-Za-z\-_]{22}')
-        Severity = 'Critical'
-        Description = 'Square payment API token'
-        Remediation = 'Revoke token in Square Developer dashboard immediately.'
-        Entropy = $false
+    'Square Access Token'                     = @{
+        Patterns              = @('sq0atp-[0-9A-Za-z\-_]{22}')
+        Severity              = 'Critical'
+        Description           = 'Square payment API token'
+        Remediation           = 'Revoke token in Square Developer dashboard immediately.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'PayPal/Braintree Access Token' = @{
-        Patterns = @('access_token\$production\$[0-9a-z]{16}\$[0-9a-f]{32}')
-        Severity = 'Critical'
-        Description = 'PayPal/Braintree production access token'
-        Remediation = 'Rotate credentials in PayPal/Braintree dashboard. Alert finance team.'
-        Entropy = $false
+    'PayPal/Braintree Access Token'           = @{
+        Patterns              = @('access_token\$production\$[0-9a-z]{16}\$[0-9a-f]{32}')
+        Severity              = 'Critical'
+        Description           = 'PayPal/Braintree production access token'
+        Remediation           = 'Rotate credentials in PayPal/Braintree dashboard. Alert finance team.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'Twilio API Key' = @{
-        Patterns = @('(?<![A-Za-z0-9_])SK[a-z0-9]{32}(?![A-Za-z0-9_])')
-        Severity = 'High'
-        Description = 'Twilio API key'
-        Remediation = 'Delete key in Twilio console. Rotate Account SID if needed.'
-        Entropy = $false
+    'Twilio API Key'                          = @{
+        Patterns              = @('(?<![A-Za-z0-9_])SK[a-z0-9]{32}(?![A-Za-z0-9_])')
+        Severity              = 'High'
+        Description           = 'Twilio API key'
+        Remediation           = 'Delete key in Twilio console. Rotate Account SID if needed.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'Twilio Account SID' = @{
-        Patterns = @('(?<![A-Za-z0-9_])AC[a-z0-9]{32}(?![A-Za-z0-9_])')
-        Severity = 'Medium'
-        Description = 'Twilio Account SID'
-        Remediation = 'SID is less sensitive but review associated auth tokens.'
-        Entropy = $false
+    'Twilio Account SID'                      = @{
+        Patterns              = @('(?<![A-Za-z0-9_])AC[a-z0-9]{32}(?![A-Za-z0-9_])')
+        Severity              = 'Medium'
+        Description           = 'Twilio Account SID'
+        Remediation           = 'SID is less sensitive but review associated auth tokens.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'SendGrid API Key' = @{
-        Patterns = @('SG\.[a-zA-Z0-9_-]{22}\.[a-zA-Z0-9_-]{43}')
-        Severity = 'High'
-        Description = 'SendGrid API key'
-        Remediation = 'Delete key in SendGrid dashboard. Create new with minimal permissions.'
-        Entropy = $false
+    'SendGrid API Key'                        = @{
+        Patterns              = @('SG\.[a-zA-Z0-9_-]{22}\.[a-zA-Z0-9_-]{43}')
+        Severity              = 'High'
+        Description           = 'SendGrid API key'
+        Remediation           = 'Delete key in SendGrid dashboard. Create new with minimal permissions.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'Mailgun API Key' = @{
-        Patterns = @('key-[a-zA-Z0-9]{32}')
-        Severity = 'High'
-        Description = 'Mailgun API key'
-        Remediation = 'Regenerate key in Mailgun control panel.'
-        Entropy = $false
+    'Mailgun API Key'                         = @{
+        Patterns              = @('key-[a-zA-Z0-9]{32}')
+        Severity              = 'High'
+        Description           = 'Mailgun API key'
+        Remediation           = 'Regenerate key in Mailgun control panel.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'Mailchimp API Key' = @{
-        Patterns = @('[a-f0-9]{32}-us[0-9]{1,2}')
-        Severity = 'High'
-        Description = 'Mailchimp API key'
-        Remediation = 'Regenerate API key in Mailchimp account settings.'
-        Entropy = $false
+    'Mailchimp API Key'                       = @{
+        Patterns              = @('[a-f0-9]{32}-us[0-9]{1,2}')
+        Severity              = 'High'
+        Description           = 'Mailchimp API key'
+        Remediation           = 'Regenerate API key in Mailchimp account settings.'
+        Entropy               = $false
         FalsePositiveKeywords = @('md5')
     }
-    'Azure Storage Account Key' = @{
-        Patterns = @('DefaultEndpointsProtocol=https;AccountName=[^;]+;AccountKey=([A-Za-z0-9+/=]{88});')
-        Severity = 'Critical'
-        Description = 'Azure Storage account connection string'
-        Remediation = 'Regenerate key in Azure Portal. Use Azure Key Vault.'
-        Entropy = $false
+    'Azure Storage Account Key'               = @{
+        Patterns              = @('DefaultEndpointsProtocol=https;AccountName=[^;]+;AccountKey=([A-Za-z0-9+/=]{88});')
+        Severity              = 'Critical'
+        Description           = 'Azure Storage account connection string'
+        Remediation           = 'Regenerate key in Azure Portal. Use Azure Key Vault.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'Azure SAS Token' = @{
-        Patterns = @('(\?|&)sig=[A-Za-z0-9%]+')
-        Severity = 'High'
-        Description = 'Azure Shared Access Signature token'
-        Remediation = 'Regenerate SAS token. Use short expiration times.'
-        Entropy = $false
+    'Azure SAS Token'                         = @{
+        Patterns              = @('(\?|&)sig=[A-Za-z0-9%]+')
+        Severity              = 'High'
+        Description           = 'Azure Shared Access Signature token'
+        Remediation           = 'Regenerate SAS token. Use short expiration times.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'NPM Access Token' = @{
-        Patterns = @('npm_[a-zA-Z0-9]{36}')
-        Severity = 'High'
-        Description = 'NPM authentication token'
-        Remediation = 'Revoke token at npmjs.com. Use granular access tokens.'
-        Entropy = $false
+    'NPM Access Token'                        = @{
+        Patterns              = @('npm_[a-zA-Z0-9]{36}')
+        Severity              = 'High'
+        Description           = 'NPM authentication token'
+        Remediation           = 'Revoke token at npmjs.com. Use granular access tokens.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'Docker Registry Auth' = @{
-        Patterns = @('(?i)(docker[_-]?password|docker[_-]?token)\s*[:=]\s*["\''](([^"\'']{8,}))["\'']]')
-        Severity = 'High'
-        Description = 'Docker registry credentials'
-        Remediation = 'Rotate registry credentials. Use short-lived tokens.'
-        Entropy = $true
+    'Docker Registry Auth'                    = @{
+        Patterns              = @('(?i)(docker[_-]?password|docker[_-]?token)\s*[:=]\s*["\''](([^"\'']{8,}))["\'']]')
+        Severity              = 'High'
+        Description           = 'Docker registry credentials'
+        Remediation           = 'Rotate registry credentials. Use short-lived tokens.'
+        Entropy               = $true
         FalsePositiveKeywords = @('example')
     }
-    'Heroku API Key' = @{
-        Patterns = @('[hH][eE][rR][oO][kK][uU].{0,30}[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}')
-        Severity = 'High'
-        Description = 'Heroku API key'
-        Remediation = 'Regenerate API key in Heroku account settings.'
-        Entropy = $false
+    'Heroku API Key'                          = @{
+        Patterns              = @('[hH][eE][rR][oO][kK][uU].{0,30}[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}')
+        Severity              = 'High'
+        Description           = 'Heroku API key'
+        Remediation           = 'Regenerate API key in Heroku account settings.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'Generic Password Assignment' = @{
-        Patterns = @('(?i)(?:password|passwd|pwd)\s*[:=]\s*["'']([^"'']{8,})["'']')
-        Severity = 'Medium'
-        Description = 'Generic password in configuration'
-        Remediation = 'Move to environment variables or secrets management system.'
-        Entropy = $true
+    'Generic Password Assignment'             = @{
+        Patterns              = @('(?i)(?:password|passwd|pwd)\s*[:=]\s*["'']([^"'']{8,})["'']')
+        Severity              = 'Medium'
+        Description           = 'Generic password in configuration'
+        Remediation           = 'Move to environment variables or secrets management system.'
+        Entropy               = $true
         FalsePositiveKeywords = @('your', 'enter', 'type', 'example', 'password123', '12345678', 'changeme')
     }
-    'Database Connection String (MongoDB)' = @{
-        Patterns = @('mongodb(\+srv)?://[^:]+:([^@]+)@[^/]+')
-        Severity = 'Critical'
-        Description = 'MongoDB connection string with credentials'
-        Remediation = 'Rotate database password. Use connection string from secrets manager.'
-        Entropy = $false
+    'Database Connection String (MongoDB)'    = @{
+        Patterns              = @('mongodb(\+srv)?://[^:]+:([^@]+)@[^/]+')
+        Severity              = 'Critical'
+        Description           = 'MongoDB connection string with credentials'
+        Remediation           = 'Rotate database password. Use connection string from secrets manager.'
+        Entropy               = $false
         FalsePositiveKeywords = @('username', 'user', 'password')
     }
-    'Database Connection String (MySQL)' = @{
-        Patterns = @('mysql://[^:]+:([^@]+)@[^/]+')
-        Severity = 'Critical'
-        Description = 'MySQL connection string with credentials'
-        Remediation = 'Rotate database password. Use environment variables.'
-        Entropy = $false
+    'Database Connection String (MySQL)'      = @{
+        Patterns              = @('mysql://[^:]+:([^@]+)@[^/]+')
+        Severity              = 'Critical'
+        Description           = 'MySQL connection string with credentials'
+        Remediation           = 'Rotate database password. Use environment variables.'
+        Entropy               = $false
         FalsePositiveKeywords = @('username', 'password')
     }
     'Database Connection String (PostgreSQL)' = @{
-        Patterns = @('postgresql://[^:]+:([^@]+)@[^/]+')
-        Severity = 'Critical'
-        Description = 'PostgreSQL connection string with credentials'
-        Remediation = 'Rotate database password. Use pg_pass file or secrets manager.'
-        Entropy = $false
+        Patterns              = @('postgresql://[^:]+:([^@]+)@[^/]+')
+        Severity              = 'Critical'
+        Description           = 'PostgreSQL connection string with credentials'
+        Remediation           = 'Rotate database password. Use pg_pass file or secrets manager.'
+        Entropy               = $false
         FalsePositiveKeywords = @('username', 'password')
     }
-    'SQL Server Connection String' = @{
-        Patterns = @('Server=[^;]+;Database=[^;]+;User Id=[^;]+;Password=([^;]+);')
-        Severity = 'Critical'
-        Description = 'SQL Server connection string with password'
-        Remediation = 'Rotate password. Use Windows Authentication or Azure AD.'
-        Entropy = $false
+    'SQL Server Connection String'            = @{
+        Patterns              = @('Server=[^;]+;Database=[^;]+;User Id=[^;]+;Password=([^;]+);')
+        Severity              = 'Critical'
+        Description           = 'SQL Server connection string with password'
+        Remediation           = 'Rotate password. Use Windows Authentication or Azure AD.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'Generic Secret' = @{
-        Patterns = @("(?i)(secret|token|credential)[`"\s]*[:=][`"\s]*[`"\']([a-zA-Z0-9_\-\.]{20,})[`"\']?")
-        Severity = 'Medium'
-        Description = 'Generic secret or token'
-        Remediation = 'Identify the service and rotate credentials.'
-        Entropy = $true
+    'Generic Secret'                          = @{
+        Patterns              = @("(?i)(secret|token|credential)[`"\s]*[:=][`"\s]*[`"\']([a-zA-Z0-9_\-\.]{20,})[`"\']?")
+        Severity              = 'Medium'
+        Description           = 'Generic secret or token'
+        Remediation           = 'Identify the service and rotate credentials.'
+        Entropy               = $true
         FalsePositiveKeywords = @('your', 'example', 'insert')
     }
-    'Bearer Token' = @{
-        Patterns = @('(?i)bearer\s+([a-zA-Z0-9_\-\.=]{20,})')
-        Severity = 'High'
-        Description = 'Bearer authentication token'
-        Remediation = 'Rotate token. Verify token expiration policy.'
-        Entropy = $true
+    'Bearer Token'                            = @{
+        Patterns              = @('(?i)bearer\s+([a-zA-Z0-9_\-\.=]{20,})')
+        Severity              = 'High'
+        Description           = 'Bearer authentication token'
+        Remediation           = 'Rotate token. Verify token expiration policy.'
+        Entropy               = $true
         FalsePositiveKeywords = @('token', 'your')
     }
-    'OAuth Token' = @{
-        Patterns = @("(?i)oauth[_-]?token[`"\s]*[:=][`"\s]*[`"\']([a-zA-Z0-9_\-\.=]{20,})[`"\']?")
-        Severity = 'High'
-        Description = 'OAuth access token'
-        Remediation = 'Revoke token through OAuth provider.'
-        Entropy = $true
+    'OAuth Token'                             = @{
+        Patterns              = @("(?i)oauth[_-]?token[`"\s]*[:=][`"\s]*[`"\']([a-zA-Z0-9_\-\.=]{20,})[`"\']?")
+        Severity              = 'High'
+        Description           = 'OAuth access token'
+        Remediation           = 'Revoke token through OAuth provider.'
+        Entropy               = $true
         FalsePositiveKeywords = @('example')
     }
-    'Basic Auth Credentials' = @{
-        Patterns = @('(?i)Authorization:\s*Basic\s+([A-Za-z0-9+/=]{20,})')
-        Severity = 'High'
-        Description = 'HTTP Basic Authentication credentials'
-        Remediation = 'Rotate credentials. Consider OAuth or API keys instead.'
-        Entropy = $false
+    'Basic Auth Credentials'                  = @{
+        Patterns              = @('(?i)Authorization:\s*Basic\s+([A-Za-z0-9+/=]{20,})')
+        Severity              = 'High'
+        Description           = 'HTTP Basic Authentication credentials'
+        Remediation           = 'Rotate credentials. Consider OAuth or API keys instead.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'Firebase URL' = @{
-        Patterns = @('[a-z0-9.-]+\.firebaseio\.com')
-        Severity = 'Low'
-        Description = 'Firebase database URL'
-        Remediation = 'Verify Firebase security rules are properly configured.'
-        Entropy = $false
+    'Firebase URL'                            = @{
+        Patterns              = @('[a-z0-9.-]+\.firebaseio\.com')
+        Severity              = 'Low'
+        Description           = 'Firebase database URL'
+        Remediation           = 'Verify Firebase security rules are properly configured.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'Cloudinary URL' = @{
-        Patterns = @('cloudinary://[0-9]+:[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+')
-        Severity = 'High'
-        Description = 'Cloudinary connection URL with credentials'
-        Remediation = 'Regenerate API secret in Cloudinary dashboard.'
-        Entropy = $false
+    'Cloudinary URL'                          = @{
+        Patterns              = @('cloudinary://[0-9]+:[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+')
+        Severity              = 'High'
+        Description           = 'Cloudinary connection URL with credentials'
+        Remediation           = 'Regenerate API secret in Cloudinary dashboard.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
-    'OpenAI API Key' = @{
-        Patterns = @('sk-proj-[a-zA-Z0-9-]{48}', 'sk-[a-zA-Z0-9-]{48}')
-        Severity = 'Critical'
-        Description = 'OpenAI API Key detected.'
-        Remediation = 'Revoke the API key immediately from the OpenAI dashboard.'
-        Entropy = $false
+    'OpenAI API Key'                          = @{
+        Patterns              = @('sk-proj-[a-zA-Z0-9-]{48}', 'sk-[a-zA-Z0-9-]{48}')
+        Severity              = 'Critical'
+        Description           = 'OpenAI API Key detected.'
+        Remediation           = 'Revoke the API key immediately from the OpenAI dashboard.'
+        Entropy               = $false
         FalsePositiveKeywords = @()
     }
 }
@@ -534,7 +539,8 @@ function Get-Entropy {
     foreach ($char in $String.ToCharArray()) {
         if ($charCount.ContainsKey($char)) {
             $charCount[$char]++
-        } else {
+        }
+        else {
             $charCount[$char] = 1
         }
     }
@@ -581,7 +587,8 @@ function Get-Whitelist {
             return @()
         }
         return $filteredContent
-    } catch {
+    }
+    catch {
         Write-LogMessage "Failed to load whitelist: $($_.Exception.Message)" "WARNING"
         return @()
     }
@@ -604,7 +611,8 @@ function Test-Whitelisted {
             if ($FilePath -like "*$filePattern*" -and $Finding -match $valuePattern) {
                 return $true
             }
-        } else {
+        }
+        else {
             # Simple pattern matching (treat whitelist entry as literal)
             if ($Finding -match [regex]::Escape($item)) {
                 return $true
@@ -643,8 +651,8 @@ function Get-ContextLines {
     for ($i = $startLine; $i -le $endLine; $i++) {
         $context += [PSCustomObject]@{
             LineNumber = $i + 1
-            Content = $lines[$i]
-            IsMatch = ($i -eq $LineNumber - 1)
+            Content    = $lines[$i]
+            IsMatch    = ($i -eq $LineNumber - 1)
         }
     }
     
@@ -665,7 +673,7 @@ function Write-LogMessage {
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logEntry = "[$timestamp] [$Level] $Message"
     
-    if ($LogFile) {
+    if ($Log -and $LogFile) {
         Add-Content -Path $LogFile -Value $logEntry -Encoding UTF8 -ErrorAction SilentlyContinue
     }
     
@@ -684,6 +692,8 @@ function Write-LogMessage {
 # Initialize log file
 function Initialize-LogFile {
     param($LogPath)
+    
+    if (-not $Log) { return }
     
     $logDir = Split-Path -Parent $LogPath
     if ($logDir -and !(Test-Path $logDir)) {
@@ -778,10 +788,12 @@ function Scan-FileForSecrets {
                         # Redact secret value
                         $displayValue = if ($ShowSecretValues) { 
                             $matchedText 
-                        } else {
+                        }
+                        else {
                             if ($matchedText.Length -le 10) {
                                 "***REDACTED***"
-                            } else {
+                            }
+                            else {
                                 $matchedText.Substring(0, [Math]::Min(10, $matchedText.Length)) + "***REDACTED***"
                             }
                         }
@@ -792,29 +804,29 @@ function Scan-FileForSecrets {
                         
                         # Create finding object
                         $finding = [PSCustomObject]@{
-                            Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-                            Category = $category
-                            Severity = $severity
-                            Description = $patternInfo.Description
-                            Remediation = $patternInfo.Remediation
-                            FilePath = $FilePath
-                            LineNumber = $lineNumber
-                            ColumnStart = $match.Index
-                            MatchedValue = $displayValue
-                            Entropy = [Math]::Round($entropy, 2)
-                            ContextLines = $contextLines
+                            Timestamp     = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                            Category      = $category
+                            Severity      = $severity
+                            Description   = $patternInfo.Description
+                            Remediation   = $patternInfo.Remediation
+                            FilePath      = $FilePath
+                            LineNumber    = $lineNumber
+                            ColumnStart   = $match.Index
+                            MatchedValue  = $displayValue
+                            Entropy       = [Math]::Round($entropy, 2)
+                            ContextLines  = $contextLines
                             FileExtension = $fileInfo.Extension
-                            FileSize = $fileInfo.Length
+                            FileSize      = $fileInfo.Length
                         }
                         
                         [void]$script:AllFindings.Add($finding)
                         
                         $logLevel = switch ($severity) {
                             "Critical" { "CRITICAL" }
-                            "High"     { "ERROR" }
-                            "Medium"   { "WARNING" }
-                            "Low"      { "WARNING" }
-                            default    { "INFO" }
+                            "High" { "ERROR" }
+                            "Medium" { "WARNING" }
+                            "Low" { "WARNING" }
+                            default { "INFO" }
                         }
 
                         $msg = "$category | ${FilePath}:$lineNumber | Entropy: $($finding.Entropy)"
@@ -823,7 +835,8 @@ function Scan-FileForSecrets {
                         $contextMsg = "  └─ Matched: $($finding.MatchedValue)"
                         Write-LogMessage $contextMsg $logLevel
                     }
-                } catch {
+                }
+                catch {
                     Write-LogMessage "Error processing pattern '$pattern' in $FilePath : $($_.Exception.Message)" "WARNING"
                 }
             }
@@ -836,7 +849,8 @@ function Scan-FileForSecrets {
             Write-LogMessage "Progress: $script:ScannedFiles/$script:TotalFiles files ($percent%)" "INFO"
         }
         
-    } catch {
+    }
+    catch {
         Write-LogMessage "Error scanning $FilePath : $($_.Exception.Message)" "ERROR"
     }
 }
@@ -861,12 +875,12 @@ function Export-SARIF {
             $ruleIndex[$ruleId] = $ruleCounter++
             
             $rules += @{
-                id = $ruleId
-                name = $finding.Category
-                shortDescription = @{
+                id                   = $ruleId
+                name                 = $finding.Category
+                shortDescription     = @{
                     text = $finding.Description
                 }
-                fullDescription = @{
+                fullDescription      = @{
                     text = "$($finding.Description). $($finding.Remediation)"
                 }
                 defaultConfiguration = @{
@@ -878,51 +892,51 @@ function Export-SARIF {
                         default { "warning" }
                     }
                 }
-                properties = @{
-                    tags = @("security", "secret", $finding.Severity.ToLower())
+                properties           = @{
+                    tags      = @("security", "secret", $finding.Severity.ToLower())
                     precision = "high"
                 }
             }
         }
         
         $results += @{
-            ruleId = $ruleId
-            ruleIndex = $ruleIndex[$ruleId]
-            message = @{
+            ruleId     = $ruleId
+            ruleIndex  = $ruleIndex[$ruleId]
+            message    = @{
                 text = "$($finding.Category) detected: $($finding.Description)"
             }
-            locations = @(
+            locations  = @(
                 @{
                     physicalLocation = @{
                         artifactLocation = @{
                             uri = $finding.FilePath -replace '\\', '/'
                         }
-                        region = @{
-                            startLine = $finding.LineNumber
+                        region           = @{
+                            startLine   = $finding.LineNumber
                             startColumn = 1
                         }
                     }
                 }
             )
             properties = @{
-                severity = $finding.Severity
-                entropy = $finding.Entropy
+                severity    = $finding.Severity
+                entropy     = $finding.Entropy
                 remediation = $finding.Remediation
             }
         }
     }
     
     $sarif = @{
-        version = "2.1.0"
+        version   = "2.1.0"
         '$schema' = "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"
-        runs = @(
+        runs      = @(
             @{
-                tool = @{
+                tool    = @{
                     driver = @{
-                        name = "Enterprise Secret Scanner"
-                        version = "3.0"
+                        name           = "Enterprise Secret Scanner"
+                        version        = "3.0"
                         informationUri = "https://github.com/yourorg/secret-scanner"
-                        rules = $rules
+                        rules          = $rules
                     }
                 }
                 results = $results
@@ -950,7 +964,7 @@ function Export-Findings {
         "csv" {
             $csvPath = $BasePath -replace '\.log$', '.csv'
             $Findings | Select-Object Timestamp, Severity, Category, FilePath, LineNumber, Entropy, MatchedValue, Description | 
-                Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8
+            Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8
             Write-LogMessage "CSV report: $csvPath" "SUCCESS"
         }
         "sarif" {
@@ -971,10 +985,10 @@ function Export-Findings {
 function Generate-HTMLReport {
     param([array]$Findings)
     
-    $criticalCount = ($Findings | Where-Object {$_.Severity -eq 'Critical'}).Count
-    $highCount = ($Findings | Where-Object {$_.Severity -eq 'High'}).Count
-    $mediumCount = ($Findings | Where-Object {$_.Severity -eq 'Medium'}).Count
-    $lowCount = ($Findings | Where-Object {$_.Severity -eq 'Low'}).Count
+    $criticalCount = ($Findings | Where-Object { $_.Severity -eq 'Critical' }).Count
+    $highCount = ($Findings | Where-Object { $_.Severity -eq 'High' }).Count
+    $mediumCount = ($Findings | Where-Object { $_.Severity -eq 'Medium' }).Count
+    $lowCount = ($Findings | Where-Object { $_.Severity -eq 'Low' }).Count
     
     $html = @"
 <!DOCTYPE html>
@@ -1072,7 +1086,8 @@ function Generate-HTMLReport {
                 <p>All scanned files appear clean.</p>
             </div>
 "@
-    } else {
+    }
+    else {
         foreach ($finding in ($Findings | Sort-Object @{ Expression = { Get-SeverityValue $_.Severity }; Descending = $true }, @{ Expression = { $_.Category }; Descending = $false })) {
             $severityClass = $finding.Severity.ToLower()
             $contextHtml = ""
@@ -1211,43 +1226,45 @@ function Scan-GitHistory {
                             
                             $displayValue = if ($ShowSecretValues) { 
                                 $matchedText 
-                            } else {
+                            }
+                            else {
                                 if ($matchedText.Length -le 10) {
                                     "***REDACTED***"
-                                } else {
+                                }
+                                else {
                                     $matchedText.Substring(0, [Math]::Min(10, $matchedText.Length)) + "***REDACTED***"
                                 }
                             }
                             
                             $finding = [PSCustomObject]@{
-                                Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-                                Category = $category
-                                Severity = $severity
-                                Description = $patternInfo.Description
-                                Remediation = "$($patternInfo.Remediation) This secret was found in git history (commit $($commitHash.Substring(0,8))). Consider using git-filter-branch or BFG Repo-Cleaner to remove it from history."
-                                FilePath = "GIT HISTORY: Commit $($commitHash.Substring(0,8))"
-                                LineNumber = 0
-                                ColumnStart = $match.Index
-                                MatchedValue = $displayValue
-                                Entropy = [Math]::Round($entropy, 2)
-                                ContextLines = @()
-                                GitCommit = $commitHash
-                                GitAuthor = $author
-                                GitEmail = $email
-                                GitDate = $date
-                                GitMessage = $message
+                                Timestamp     = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                                Category      = $category
+                                Severity      = $severity
+                                Description   = $patternInfo.Description
+                                Remediation   = "$($patternInfo.Remediation) This secret was found in git history (commit $($commitHash.Substring(0,8))). Consider using git-filter-branch or BFG Repo-Cleaner to remove it from history."
+                                FilePath      = "GIT HISTORY: Commit $($commitHash.Substring(0,8))"
+                                LineNumber    = 0
+                                ColumnStart   = $match.Index
+                                MatchedValue  = $displayValue
+                                Entropy       = [Math]::Round($entropy, 2)
+                                ContextLines  = @()
+                                GitCommit     = $commitHash
+                                GitAuthor     = $author
+                                GitEmail      = $email
+                                GitDate       = $date
+                                GitMessage    = $message
                                 FileExtension = ".git"
-                                FileSize = 0
+                                FileSize      = 0
                             }
                             
                             [void]$script:AllFindings.Add($finding)
                             
                             $logLevel = switch ($severity) {
                                 "Critical" { "CRITICAL" }
-                                "High"     { "ERROR" }
-                                "Medium"   { "WARNING" }
-                                "Low"      { "WARNING" }
-                                default    { "INFO" }
+                                "High" { "ERROR" }
+                                "Medium" { "WARNING" }
+                                "Low" { "WARNING" }
+                                default { "INFO" }
                             }
 
                             $msg = "$category | Git commit $($commitHash.Substring(0,8)) by $author | Entropy: $($finding.Entropy)"
@@ -1256,7 +1273,8 @@ function Scan-GitHistory {
                             $contextMsg = "  └─ Matched: $($finding.MatchedValue)"
                             Write-LogMessage $contextMsg $logLevel
                         }
-                    } catch {
+                    }
+                    catch {
                         # Silently continue on regex errors in git history
                     }
                 }
@@ -1265,9 +1283,11 @@ function Scan-GitHistory {
         
         Write-LogMessage "Git history scan complete: $processedCommits commits scanned" "SUCCESS"
         
-    } catch {
+    }
+    catch {
         Write-LogMessage "Error scanning git history: $($_.Exception.Message)" "ERROR"
-    } finally {
+    }
+    finally {
         Pop-Location
     }
 }
@@ -1301,11 +1321,11 @@ function Start-InteractiveRemediation {
         Write-Host $finding.Category -ForegroundColor White
         Write-Host "Severity:    " -NoNewline -ForegroundColor Yellow
         Write-Host $finding.Severity -ForegroundColor $(switch ($finding.Severity) {
-            "Critical" { "Red" }
-            "High" { "Red" }
-            "Medium" { "Yellow" }
-            "Low" { "Green" }
-        })
+                "Critical" { "Red" }
+                "High" { "Red" }
+                "Medium" { "Yellow" }
+                "Low" { "Green" }
+            })
         Write-Host "File:        " -NoNewline -ForegroundColor Yellow
         Write-Host $finding.FilePath -ForegroundColor White
         Write-Host "Line:        " -NoNewline -ForegroundColor Yellow
@@ -1334,7 +1354,8 @@ function Start-InteractiveRemediation {
             "O" {
                 if (Test-Path $finding.FilePath) {
                     Start-Process notepad.exe -ArgumentList $finding.FilePath
-                } else {
+                }
+                else {
                     Write-Host "File not found or in git history." -ForegroundColor Red
                     Start-Sleep -Seconds 2
                 }
@@ -1343,7 +1364,8 @@ function Start-InteractiveRemediation {
                 if ($WhitelistFile) {
                     Add-Content -Path $WhitelistFile -Value $finding.MatchedValue
                     Write-Host "Added to whitelist: $WhitelistFile" -ForegroundColor Green
-                } else {
+                }
+                else {
                     $newWhitelist = Read-Host "Enter whitelist file path"
                     if ($newWhitelist) {
                         $script:WhitelistFile = $newWhitelist
@@ -1356,7 +1378,8 @@ function Start-InteractiveRemediation {
             "N" {
                 if ($currentIndex -lt $Findings.Count - 1) {
                     $currentIndex++
-                } else {
+                }
+                else {
                     Write-Host "Last finding reached." -ForegroundColor Yellow
                     Start-Sleep -Seconds 1
                 }
@@ -1364,7 +1387,8 @@ function Start-InteractiveRemediation {
             "P" {
                 if ($currentIndex -gt 0) {
                     $currentIndex--
-                } else {
+                }
+                else {
                     Write-Host "First finding reached." -ForegroundColor Yellow
                     Start-Sleep -Seconds 1
                 }
@@ -1406,6 +1430,8 @@ try {
     
     # Load whitelist
     $whitelist = Get-Whitelist $WhitelistFile
+    if ($null -eq $whitelist) { $whitelist = @() }
+    
     if ($whitelist.Count -gt 0) {
         Write-LogMessage "Loaded $($whitelist.Count) whitelist entries" "INFO"
     }
@@ -1477,7 +1503,8 @@ try {
             $skippedCount = $filesToScan.Count - $filesToActuallyScan.Count
             $cacheHitRate = if ($filesToScan.Count -gt 0) {
                 [Math]::Round(($skippedCount / $filesToScan.Count) * 100, 1)
-            } else { 0 }
+            }
+            else { 0 }
             
             Write-LogMessage "Cache hit: $cacheHitRate% ($skippedCount files skipped)" "SUCCESS"
         }
@@ -1509,21 +1536,21 @@ try {
                 -ThrottleLimit $ThrottleLimit `
                 -ShowSecretValues $ShowSecretValues `
                 -MaxFileSizeMB $MaxFileSizeMB `
-                -GetEntropyFunction ${function:Get-Entropy} `
-                -GetSeverityValueFunction ${function:Get-SeverityValue} `
-                -TestWhitelistedFunction ${function:Test-Whitelisted} `
-                -TestFalsePositiveFunction ${function:Test-FalsePositive} `
-                -GetContextLinesFunction ${function:Get-ContextLines}
+                -GetEntropyFunction ${function:Get-Entropy}.ToString() `
+                -GetSeverityValueFunction ${function:Get-SeverityValue}.ToString() `
+                -TestWhitelistedFunction ${function:Test-Whitelisted}.ToString() `
+                -TestFalsePositiveFunction ${function:Test-FalsePositive}.ToString() `
+                -GetContextLinesFunction ${function:Get-ContextLines}.ToString()
         }
         else {
             # Fallback to standard parallel processing
             Write-LogMessage "Using standard parallel processing..." "INFO"
             
-            $GetEntropyDef       = ${function:Get-Entropy}.ToString()
+            $GetEntropyDef = ${function:Get-Entropy}.ToString()
             $GetSeverityValueDef = ${function:Get-SeverityValue}.ToString()
-            $TestWhitelistedDef  = ${function:Test-Whitelisted}.ToString()
-            $TestFalsePosDef     = ${function:Test-FalsePositive}.ToString()
-            $GetContextLinesDef  = ${function:Get-ContextLines}.ToString()
+            $TestWhitelistedDef = ${function:Test-Whitelisted}.ToString()
+            $TestFalsePosDef = ${function:Test-FalsePositive}.ToString()
+            $GetContextLinesDef = ${function:Get-ContextLines}.ToString()
 
             $parallelResults = $filesToActuallyScan | ForEach-Object -ThrottleLimit $ThrottleLimit -Parallel {
                 $file = $_
@@ -1540,11 +1567,11 @@ try {
                 $showVals = $using:ShowSecretValues
                 $maxSize = $using:MaxFileSizeMB
 
-                ${function:Get-Entropy}        = $using:GetEntropyDef
-                ${function:Get-SeverityValue}  = $using:GetSeverityValueDef
-                ${function:Test-Whitelisted}   = $using:TestWhitelistedDef
+                ${function:Get-Entropy} = $using:GetEntropyDef
+                ${function:Get-SeverityValue} = $using:GetSeverityValueDef
+                ${function:Test-Whitelisted} = $using:TestWhitelistedDef
                 ${function:Test-FalsePositive} = $using:TestFalsePosDef
-                ${function:Get-ContextLines}   = $using:GetContextLinesDef
+                ${function:Get-ContextLines} = $using:GetContextLinesDef
                 
                 try {
                     $fileInfo = Get-Item $file.FullName -ErrorAction Stop
@@ -1587,10 +1614,12 @@ try {
                                     
                                     $displayValue = if ($showVals) { 
                                         $matchedText 
-                                    } else {
+                                    }
+                                    else {
                                         if ($matchedText.Length -le 10) {
                                             "***REDACTED***"
-                                        } else {
+                                        }
+                                        else {
                                             $matchedText.Substring(0, [Math]::Min(10, $matchedText.Length)) + "***REDACTED***"
                                         }
                                     }
@@ -1600,34 +1629,36 @@ try {
                                     }
                                     
                                     $finding = [PSCustomObject]@{
-                                        Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-                                        Category = $category
-                                        Severity = $severity
-                                        Description = $patternInfo.Description
-                                        Remediation = $patternInfo.Remediation
-                                        FilePath = $file.FullName
-                                        LineNumber = $lineNumber
-                                        ColumnStart = $match.Index
-                                        MatchedValue = $displayValue
-                                        Entropy = [Math]::Round($entropy, 2)
-                                        ContextLines = $contextLines
+                                        Timestamp     = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                                        Category      = $category
+                                        Severity      = $severity
+                                        Description   = $patternInfo.Description
+                                        Remediation   = $patternInfo.Remediation
+                                        FilePath      = $file.FullName
+                                        LineNumber    = $lineNumber
+                                        ColumnStart   = $match.Index
+                                        MatchedValue  = $displayValue
+                                        Entropy       = [Math]::Round($entropy, 2)
+                                        ContextLines  = $contextLines
                                         FileExtension = $fileInfo.Extension
-                                        FileSize = $fileInfo.Length
+                                        FileSize      = $fileInfo.Length
                                     }
                                     
                                     $localFindings.Add($finding)
                                 }
-                            } catch {
+                            }
+                            catch {
                                 # Silently continue on regex errors
                             }
                         }
                     }
-                } catch {
+                }
+                catch {
                     # Error handling in parallel threads
                 }
 
                 [PSCustomObject]@{
-                    File = $file.FullName
+                    File     = $file.FullName
                     Findings = $localFindings
                 }
             }
@@ -1680,7 +1711,8 @@ try {
             Write-LogMessage "Peak memory usage: $($memUsage.PeakWorkingSetMB) MB" "INFO"
         }
 
-    } else {
+    }
+    else {
         Write-LogMessage "Starting sequential scan (PowerShell $psVersion)..." "INFO"
         
         foreach ($file in $filesToScan) {
@@ -1734,9 +1766,11 @@ try {
         Write-Host "$script:ScannedFiles / $script:TotalFiles" -ForegroundColor Gray
         Write-Host "  Duration             : " -NoNewline -ForegroundColor White
         Write-Host "$($duration.TotalSeconds.ToString('F2')) seconds" -ForegroundColor Gray
-        Write-Host "  Log File             : " -NoNewline -ForegroundColor White
-        Write-Host $LogFile -ForegroundColor Gray
-        Write-Host ""
+        if ($Log) {
+            Write-Host "  Log File             : " -NoNewline -ForegroundColor White
+            Write-Host $LogFile -ForegroundColor Gray
+            Write-Host ""
+        }
         
         # Display optimization statistics
         if ($UseCache -and $performanceModulesLoaded -and $cache) {
@@ -1808,7 +1842,8 @@ try {
         }
         
         exit 1
-    } else {
+    }
+    else {
         if (-not $QuietMode) {
             Write-Host ""
             Write-Host "✅ No potential secrets detected in scanned files." -ForegroundColor Green
@@ -1817,7 +1852,8 @@ try {
         exit 0
     }
     
-} catch {
+}
+catch {
     $errorMsg = "Fatal error: $($_.Exception.Message)"
     Write-LogMessage $errorMsg "ERROR"
     Write-Host ""
