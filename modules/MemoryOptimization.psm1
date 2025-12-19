@@ -60,7 +60,7 @@ function Get-MemoryRecommendations {
         EstimatedMemoryPerProcessMB = [Math]::Round($estimatedMemoryPerProcessMB, 2)
         EstimatedTotalMemoryMB = [Math]::Round($estimatedTotalMemoryMB, 2)
         TotalPhysicalMemoryMB = [Math]::Round($totalPhysicalMemoryMB, 2)
-        AvailablePhysicalMemoryMB = [Math::Round($availablePhysicalMemoryMB, 2)
+        AvailablePhysicalMemoryMB = [Math]::Round($availablePhysicalMemoryMB, 2)
         CurrentMemoryMB = [Math]::Round((Get-Process -Id $PID).WorkingSet64 / 1MB, 2)
     }
 }

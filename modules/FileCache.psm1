@@ -37,7 +37,7 @@ function Initialize-ScanCache {
             Write-Verbose "Cache loaded from $cacheFilePath"
         }
         catch {
-            Write-Warning "Failed to load cache from $cacheFilePath: $($_.Exception.Message). Creating new cache."
+            Write-Warning "Failed to load cache from ${cacheFilePath}: $($_.Exception.Message). Creating new cache."
             $cache = @{}
         }
     }
@@ -77,11 +77,11 @@ function Save-ScanCache {
         Write-Verbose "Cache saved to $cacheFilePath"
     }
     catch {
-        Write-Warning "Failed to save cache to $cacheFilePath: $($_.Exception.Message)"
+        Write-Warning "Failed to save cache to ${cacheFilePath}: $($_.Exception.Message)"
     }
 }
 
-function Get-FileHash {
+function Get-SHA256HashForFile {
     <#
     .SYNOPSIS
         Calculates the SHA256 hash of a file.
@@ -141,7 +141,7 @@ function Test-FileChanged {
 
     # Fallback to hash check if time and size are same (more robust but slower)
     # This might be optimized by only doing it for files that previously had findings
-    if ($cacheEntry.HasFindings -and (Get-FileHash -FilePath $File.FullName) -ne $cacheEntry.Hash) {
+    if ($cacheEntry.HasFindings -and (Get-SHA256HashForFile -FilePath $File.FullName) -ne $cacheEntry.Hash) {
         Write-Verbose "File '$($File.Name)' hash changed and previously had findings."
         return $true
     }
@@ -188,7 +188,7 @@ function Update-FileCache {
 
     $cacheEntry = @{
         Path = $File.FullName
-        Hash = Get-FileHash -FilePath $File.FullName
+        Hash = Get-SHA256HashForFile -FilePath $File.FullName
         Length = $File.Length
         LastWriteTimeUtc = $File.LastWriteTimeUtc
         HasFindings = ($FindingsCount -gt 0)
