@@ -1531,6 +1531,9 @@ try {
 
                 $patterns = $using:SecretPatterns
                 $whitelist = $using:whitelist
+                if ($null -eq $whitelist) {
+                    $whitelist = @()
+                }
                 $minEntropy = $using:MinEntropy
                 $minSevLevel = $using:minSeverityLevel
                 $context = $using:ContextLines
